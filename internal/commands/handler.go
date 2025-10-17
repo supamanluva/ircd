@@ -421,6 +421,12 @@ func (h *Handler) handleMessage(c *client.Client, msg *parser.Message, cmdType s
 			return nil
 		}
 
+		// Check if channel is moderated and user can speak
+		if ch.HasMode('m') && !ch.CanSpeak(c) {
+			h.sendNumeric(c, ERR_CANNOTSENDTOCHAN, target+" :Cannot send to channel (+m)")
+			return nil
+		}
+
 		// Broadcast message to channel (excluding sender)
 		msgText := fmt.Sprintf(":%s %s %s :%s", c.GetHostmask(), cmdType, target, message)
 		ch.Broadcast(msgText, c)
@@ -747,6 +753,16 @@ func (h *Handler) handleChannelMode(c *client.Client, msg *parser.Message) error
 				if targetClient != nil {
 					ch.SetOperator(targetClient, adding)
 					changes += "o"
+				}
+			}
+		case 'v': // voice
+			if argIndex < len(modeArgs) {
+				targetNick := modeArgs[argIndex]
+				argIndex++
+				targetClient := ch.GetMemberByNick(targetNick)
+				if targetClient != nil {
+					ch.SetVoice(targetClient, adding)
+					changes += "v"
 				}
 			}
 		case 'i': // invite-only

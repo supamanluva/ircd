@@ -15,6 +15,7 @@ type Channel struct {
 	createdAt time.Time
 	members   map[string]*client.Client // nickname -> client
 	operators map[string]bool            // nickname -> is operator
+	voiced    map[string]bool            // nickname -> has voice (+v)
 	modes     map[rune]bool              // channel modes (i, m, n, t, etc.)
 	banList   []string                   // ban masks (nick!user@host patterns)
 	mu        sync.RWMutex
@@ -27,6 +28,7 @@ func New(name string) *Channel {
 		createdAt: time.Now(),
 		members:   make(map[string]*client.Client),
 		operators: make(map[string]bool),
+		voiced:    make(map[string]bool),
 		modes:     make(map[rune]bool),
 		banList:   make([]string, 0),
 	}
@@ -79,6 +81,7 @@ func (ch *Channel) RemoveMember(c *client.Client) {
 	nick := c.GetNickname()
 	delete(ch.members, nick)
 	delete(ch.operators, nick)
+	delete(ch.voiced, nick)
 }
 
 // HasMember checks if a client is in the channel
@@ -132,6 +135,43 @@ func (ch *Channel) SetOperator(c *client.Client, isOp bool) {
 	}
 }
 
+// IsVoiced checks if a client has voice
+func (ch *Channel) IsVoiced(c *client.Client) bool {
+	ch.mu.RLock()
+	defer ch.mu.RUnlock()
+	
+	nick := c.GetNickname()
+	return ch.voiced[nick]
+}
+
+// SetVoice sets or unsets voice status for a client
+func (ch *Channel) SetVoice(c *client.Client, hasVoice bool) {
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+	
+	nick := c.GetNickname()
+	if hasVoice {
+		ch.voiced[nick] = true
+	} else {
+		delete(ch.voiced, nick)
+	}
+}
+
+// CanSpeak checks if a client can speak in a moderated channel
+func (ch *Channel) CanSpeak(c *client.Client) bool {
+	ch.mu.RLock()
+	defer ch.mu.RUnlock()
+	
+	// If not moderated, everyone can speak
+	if !ch.modes['m'] {
+		return true
+	}
+	
+	nick := c.GetNickname()
+	// Operators and voiced users can speak in moderated channels
+	return ch.operators[nick] || ch.voiced[nick]
+}
+
 // Broadcast sends a message to all members except the sender
 func (ch *Channel) Broadcast(message string, sender *client.Client) {
 	ch.mu.RLock()
@@ -173,9 +213,11 @@ func (ch *Channel) GetMemberNicks() []string {
 	
 	nicks := make([]string, 0, len(ch.members))
 	for nick := range ch.members {
-		// Prefix operators with @
+		// Prefix operators with @, voiced with +
 		if ch.operators[nick] {
 			nicks = append(nicks, "@"+nick)
+		} else if ch.voiced[nick] {
+			nicks = append(nicks, "+"+nick)
 		} else {
 			nicks = append(nicks, nick)
 		}
