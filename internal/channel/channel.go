@@ -11,6 +11,7 @@ import (
 type Channel struct {
 	name      string
 	topic     string
+	key       string                     // channel key for +k mode
 	createdAt time.Time
 	members   map[string]*client.Client // nickname -> client
 	operators map[string]bool            // nickname -> is operator
@@ -284,4 +285,31 @@ func (ch *Channel) GetMemberByNick(nick string) *client.Client {
 	ch.mu.RLock()
 	defer ch.mu.RUnlock()
 	return ch.members[nick]
+}
+
+// SetKey sets the channel key (password) for +k mode
+func (ch *Channel) SetKey(key string) {
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+	ch.key = key
+}
+
+// GetKey returns the channel key
+func (ch *Channel) GetKey() string {
+	ch.mu.RLock()
+	defer ch.mu.RUnlock()
+	return ch.key
+}
+
+// CheckKey validates if the provided key matches the channel key
+func (ch *Channel) CheckKey(providedKey string) bool {
+	ch.mu.RLock()
+	defer ch.mu.RUnlock()
+	
+	// If no key is set, allow entry
+	if ch.key == "" {
+		return true
+	}
+	
+	return ch.key == providedKey
 }

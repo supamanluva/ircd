@@ -255,8 +255,14 @@ func (h *Handler) handleJoin(c *client.Client, msg *parser.Message) error {
 	}
 
 	channelNames := strings.Split(msg.GetParam(0), ",")
+	
+	// Parse keys if provided (JOIN #chan1,#chan2 key1,key2)
+	var keys []string
+	if msg.HasParam(1) {
+		keys = strings.Split(msg.GetParam(1), ",")
+	}
 
-	for _, channelName := range channelNames {
+	for i, channelName := range channelNames {
 		channelName = strings.TrimSpace(channelName)
 
 		// Validate channel name (must start with # or &)
@@ -271,6 +277,19 @@ func (h *Handler) handleJoin(c *client.Client, msg *parser.Message) error {
 		// Check if already a member
 		if ch.HasMember(c) {
 			continue
+		}
+
+		// Check channel key if +k mode is set
+		if ch.HasMode('k') {
+			providedKey := ""
+			if i < len(keys) {
+				providedKey = strings.TrimSpace(keys[i])
+			}
+			
+			if !ch.CheckKey(providedKey) {
+				h.sendNumeric(c, ERR_BADCHANNELKEY, channelName+" :Cannot join channel (+k)")
+				continue
+			}
 		}
 
 		// Add client to channel
@@ -757,6 +776,21 @@ func (h *Handler) handleChannelMode(c *client.Client, msg *parser.Message) error
 					ch.RemoveBan(mask)
 					changes += "b"
 				}
+			}
+		case 'k': // channel key (password)
+			if adding {
+				if argIndex < len(modeArgs) {
+					key := modeArgs[argIndex]
+					argIndex++
+					ch.SetKey(key)
+					ch.SetMode('k', true)
+					changes += "k"
+				}
+			} else {
+				// Removing key
+				ch.SetKey("")
+				ch.SetMode('k', false)
+				changes += "k"
 			}
 		default:
 			h.sendNumeric(c, ERR_UNKNOWNMODE, string(modeChar)+" :is unknown mode char to me")
