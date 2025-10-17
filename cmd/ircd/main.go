@@ -107,6 +107,17 @@ func loadConfig(path string) (*server.Config, error) {
 				KeyFile  string `yaml:"key_file"`
 			} `yaml:"tls"`
 		} `yaml:"server"`
+		WebSocket struct {
+			Enabled        bool     `yaml:"enabled"`
+			Host           string   `yaml:"host"`
+			Port           int      `yaml:"port"`
+			AllowedOrigins []string `yaml:"allowed_origins"`
+			TLS            struct {
+				Enabled  bool   `yaml:"enabled"`
+				CertFile string `yaml:"cert_file"`
+				KeyFile  string `yaml:"key_file"`
+			} `yaml:"tls"`
+		} `yaml:"websocket"`
 		Operators []struct {
 			Name     string `yaml:"name"`
 			Password string `yaml:"password"`
@@ -128,17 +139,24 @@ func loadConfig(path string) (*server.Config, error) {
 
 	// Build config
 	config := &server.Config{
-		ServerName:   configData.Server.Name,
-		Host:         configData.Server.Host,
-		Port:         configData.Server.Port,
-		MaxClients:   configData.Server.MaxClients,
-		TLSEnabled:   configData.Server.TLS.Enabled,
-		TLSPort:      configData.Server.TLS.Port,
-		TLSCertFile:  configData.Server.TLS.CertFile,
-		TLSKeyFile:   configData.Server.TLS.KeyFile,
-		PingInterval: time.Duration(configData.Server.PingInterval) * time.Second,
-		Timeout:      time.Duration(configData.Server.Timeout) * time.Second,
-		Operators:    operators,
+		ServerName:       configData.Server.Name,
+		Host:             configData.Server.Host,
+		Port:             configData.Server.Port,
+		MaxClients:       configData.Server.MaxClients,
+		TLSEnabled:       configData.Server.TLS.Enabled,
+		TLSPort:          configData.Server.TLS.Port,
+		TLSCertFile:      configData.Server.TLS.CertFile,
+		TLSKeyFile:       configData.Server.TLS.KeyFile,
+		PingInterval:     time.Duration(configData.Server.PingInterval) * time.Second,
+		Timeout:          time.Duration(configData.Server.Timeout) * time.Second,
+		Operators:        operators,
+		WebSocketEnabled: configData.WebSocket.Enabled,
+		WebSocketHost:    configData.WebSocket.Host,
+		WebSocketPort:    configData.WebSocket.Port,
+		WebSocketOrigins: configData.WebSocket.AllowedOrigins,
+		WebSocketTLS:     configData.WebSocket.TLS.Enabled,
+		WebSocketCert:    configData.WebSocket.TLS.CertFile,
+		WebSocketKey:     configData.WebSocket.TLS.KeyFile,
 	}
 
 	// Set defaults for missing values
@@ -162,6 +180,15 @@ func loadConfig(path string) (*server.Config, error) {
 	}
 	if config.Timeout == 0 {
 		config.Timeout = 300 * time.Second
+	}
+	if config.WebSocketPort == 0 {
+		config.WebSocketPort = 8080
+	}
+	if config.WebSocketHost == "" {
+		config.WebSocketHost = "0.0.0.0"
+	}
+	if len(config.WebSocketOrigins) == 0 {
+		config.WebSocketOrigins = []string{"*"}
 	}
 
 	return config, nil

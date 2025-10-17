@@ -17,6 +17,7 @@ A modern, production-ready IRC server implementation written in Go, following RF
 - ✅ **User & Channel Modes** - +i (invisible), +o (operator), +m (moderated), +n (no external), +t (topic protection), +b (ban), +k (key), +v (voice)
 - ✅ **Server Operators** - OPER command with bcrypt authentication
 - ✅ **Presence System** - AWAY, USERHOST, ISON commands
+- ✅ **WebSocket Support** - Browser-based IRC clients (port 8080)
 
 ### Security & Stability
 - 🔒 **TLS/SSL Encryption** - Secure connections on port 7000
@@ -124,8 +125,13 @@ ircd/
 - [x] Enhanced WHO with away status (G/H flags)
 - [x] Enhanced WHOIS with away messages
 - [x] PRIVMSG away notifications
+- [x] **WebSocket Support** - Browser-based IRC clients (port 8080)
+  - Origin validation with wildcard patterns
+  - TLS/SSL support (WSS)
+  - Health check endpoint
+  - Interactive HTML test client
 
-**Total Commands: 23** | **Channel Modes: 8** | **User Modes: 3**
+**Total Commands: 23** | **Channel Modes: 8** | **User Modes: 3** | **Protocols: TCP, TLS, WebSocket**
 
 ### 🎯 Future Phases
 - Phase 7: WebSocket support for browser-based clients
@@ -179,9 +185,19 @@ server:
     enabled: true
     messages_per_second: 5
     burst: 10
+
+# WebSocket support for browser-based IRC clients
+websocket:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080              # WebSocket port
+  allowed_origins:
+    - "*"                 # Allow all origins (restrict in production!)
 ```
 
 ### Testing with a Client
+
+**Traditional IRC Clients:**
 
 ```bash
 # Connect via plaintext (testing only)
@@ -196,6 +212,18 @@ openssl s_client -connect localhost:7000
 # Or use a proper IRC client with TLS
 irssi -c localhost -p 7000 --tls
 weechat -r "/server add local localhost/7000 -ssl"
+```
+
+**Browser-based WebSocket Client:**
+
+```bash
+# Start the server
+./bin/ircd
+
+# Open tests/websocket_client.html in your browser
+# Or serve it via HTTP:
+python3 -m http.server 8000
+# Navigate to: http://localhost:8000/tests/websocket_client.html
 ```
 
 ## Security

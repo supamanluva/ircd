@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -13,21 +14,29 @@ import (
 	"github.com/supamanluva/ircd/internal/commands"
 	"github.com/supamanluva/ircd/internal/logger"
 	"github.com/supamanluva/ircd/internal/parser"
+	"github.com/supamanluva/ircd/internal/websocket"
 )
 
 // Config holds server configuration
 type Config struct {
-	ServerName   string
-	Host         string
-	Port         int
-	MaxClients   int
-	TLSEnabled   bool
-	TLSPort      int
-	TLSCertFile  string
-	TLSKeyFile   string
-	PingInterval time.Duration
-	Timeout      time.Duration
-	Operators    []Operator // Server operators for OPER command
+	ServerName      string
+	Host            string
+	Port            int
+	MaxClients      int
+	TLSEnabled      bool
+	TLSPort         int
+	TLSCertFile     string
+	TLSKeyFile      string
+	PingInterval    time.Duration
+	Timeout         time.Duration
+	Operators       []Operator // Server operators for OPER command
+	WebSocketEnabled bool
+	WebSocketHost    string
+	WebSocketPort    int
+	WebSocketOrigins []string
+	WebSocketTLS     bool
+	WebSocketCert    string
+	WebSocketKey     string
 }
 
 // Operator represents a server operator
@@ -38,16 +47,17 @@ type Operator struct {
 
 // Server represents the IRC server
 type Server struct {
-	config      *Config
-	logger      *logger.Logger
-	listener    net.Listener
-	tlsListener net.Listener
-	clients     map[string]*client.Client  // nickname -> client
-	clientsAddr map[string]*client.Client  // address -> client
-	channels    map[string]*channel.Channel
-	mu          sync.RWMutex
-	shutdown    chan struct{}
-	handler     *commands.Handler
+	config         *Config
+	logger         *logger.Logger
+	listener       net.Listener
+	tlsListener    net.Listener
+	wsServer       *http.Server
+	clients        map[string]*client.Client  // nickname -> client
+	clientsAddr    map[string]*client.Client  // address -> client
+	channels       map[string]*channel.Channel
+	mu             sync.RWMutex
+	shutdown       chan struct{}
+	handler        *commands.Handler
 }
 
 // GetClient returns a client by nickname
@@ -185,6 +195,13 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 	}
 
+	// Start WebSocket listener if enabled
+	if s.config.WebSocketEnabled {
+		if err := s.startWebSocketListener(ctx); err != nil {
+			s.logger.Error("Failed to start WebSocket listener", "error", err)
+		}
+	}
+
 	// Start connection acceptor
 	go s.acceptConnections(ctx, listener, false)
 
@@ -221,6 +238,62 @@ func (s *Server) startTLSListener(ctx context.Context) error {
 	// Start TLS connection acceptor
 	go s.acceptConnections(ctx, tlsListener, true)
 
+	return nil
+}
+
+// startWebSocketListener starts the WebSocket HTTP listener
+func (s *Server) startWebSocketListener(ctx context.Context) error {
+	// Create WebSocket handler
+	wsConfig := &websocket.Config{
+		AllowedOrigins:  s.config.WebSocketOrigins,
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+	}
+	
+	wsHandler := websocket.NewHandler(wsConfig, s.logger, s.handleClient)
+	
+	// Create HTTP mux
+	mux := http.NewServeMux()
+	mux.Handle("/", wsHandler)
+	mux.HandleFunc("/health", websocket.HealthCheck)
+	
+	// Create HTTP server
+	addr := fmt.Sprintf("%s:%d", s.config.WebSocketHost, s.config.WebSocketPort)
+	s.wsServer = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+	
+	s.logger.Info("Starting WebSocket server", "address", addr)
+	
+	// Start server in goroutine
+	go func() {
+		var err error
+		if s.config.WebSocketTLS && s.config.WebSocketCert != "" && s.config.WebSocketKey != "" {
+			s.logger.Info("WebSocket server listening (TLS)", "address", addr)
+			err = s.wsServer.ListenAndServeTLS(s.config.WebSocketCert, s.config.WebSocketKey)
+		} else {
+			s.logger.Info("WebSocket server listening", "address", addr)
+			err = s.wsServer.ListenAndServe()
+		}
+		
+		if err != nil && err != http.ErrServerClosed {
+			s.logger.Error("WebSocket server error", "error", err)
+		}
+	}()
+	
+	// Shutdown WebSocket server when context is done
+	go func() {
+		<-ctx.Done()
+		if s.wsServer != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := s.wsServer.Shutdown(shutdownCtx); err != nil {
+				s.logger.Error("Error shutting down WebSocket server", "error", err)
+			}
+		}
+	}()
+	
 	return nil
 }
 

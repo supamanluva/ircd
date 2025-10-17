@@ -25,17 +25,20 @@ server:
     enabled: true
     max_lines_per_second: 10
 
-# Web client configuration
-webclient:
+# WebSocket support for browser-based IRC clients
+websocket:
   enabled: true
   host: "0.0.0.0"
   port: 8080
+  # Allowed origins for CORS (* allows all, or specify domains)
+  allowed_origins:
+    - "*"
+    # - "http://localhost:8080"
+    # - "https://example.com"
   tls:
     enabled: false
     cert_file: ""
     key_file: ""
-  # Enforce one login per IP
-  one_per_ip: true
   
 # Rate limiting
 rate_limit:
