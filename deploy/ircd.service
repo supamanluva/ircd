@@ -1,0 +1,44 @@
+[Unit]
+Description=IRC Server (ircd)
+Documentation=https://github.com/supamanluva/ircd
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ircd
+Group=ircd
+WorkingDirectory=/opt/ircd
+ExecStart=/opt/ircd/bin/ircd -config /opt/ircd/config/config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ircd/logs
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Resource Limits
+LimitNOFILE=65536
+LimitNPROC=512
+
+# Restart behavior
+Restart=on-failure
+RestartSec=5s
+StartLimitBurst=3
+StartLimitInterval=60s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ircd
+
+[Install]
+WantedBy=multi-user.target

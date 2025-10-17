@@ -1,0 +1,60 @@
+# IRC Server Configuration
+
+server:
+  name: "IRCServer"
+  host: "0.0.0.0"
+  port: 6667
+  tls:
+    enabled: true
+    port: 7000
+    cert_file: "certs/server.crt"
+    key_file: "certs/server.key"
+  
+  # Connection limits
+  max_clients: 1000
+  timeout_seconds: 300
+  ping_interval_seconds: 60
+  
+  # Security
+  rate_limit:
+    enabled: true
+    messages_per_second: 5
+    burst: 10
+  
+  flood_protection:
+    enabled: true
+    max_lines_per_second: 10
+
+# Web client configuration
+webclient:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+  # Enforce one login per IP
+  one_per_ip: true
+  
+# Rate limiting
+rate_limit:
+  enabled: true
+  messages_per_second: 5
+  burst: 10
+
+# Authentication
+auth:
+  enabled: false
+  require_password: false
+
+# Logging
+logging:
+  level: "info"  # debug, info, warn, error
+  file: "logs/ircd.log"
+  console: true
+
+# Channel settings
+channels:
+  max_per_user: 10
+  persist_topics: false
