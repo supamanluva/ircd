@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IRC Web Client</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: #252526;
+            border-bottom: 1px solid #3c3c3c;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header h1 {
+            color: #4ec9b0;
+            font-size: 20px;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #d14c4c;
+        }
+
+        .status-indicator.connected {
+            background: #4ec9b0;
+        }
+
+        .status-text {
+            font-size: 14px;
+        }
+
+        /* Connection panel */
+        .connection-panel {
+            background: #252526;
+            border-bottom: 1px solid #3c3c3c;
+            padding: 15px 20px;
+        }
+
+        .connection-panel.hidden {
+            display: none;
+        }
+
+        .connection-form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            align-items: end;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-size: 12px;
+            color: #9cdcfe;
+            margin-bottom: 4px;
+        }
+
+        .form-group input {
+            padding: 8px;
+            background: #3c3c3c;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #d4d4d4;
+            font-size: 14px;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #005a9e;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        button.danger {
+            background: #d14c4c;
+        }
+
+        button.danger:hover {
+            background: #a93838;
+        }
+
+        /* Main layout */
+        .main-layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 200px;
+            background: #252526;
+            border-right: 2px solid #007acc; /* Made more visible for debugging */
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* Fix flex child overflow */
+        }
+
+        .sidebar-header {
+            padding: 10px;
+            background: #2d2d30;
+            border-bottom: 1px solid #3c3c3c;
+            font-weight: bold;
+            font-size: 12px;
+            color: #9cdcfe;
+        }
+
+        .channel-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .channel-item {
+            padding: 8px 15px;
+            cursor: pointer;
+            font-size: 14px;
+            border-left: 3px solid transparent;
+            transition: background 0.2s;
+        }
+
+        .channel-item:hover {
+            background: #2d2d30;
+        }
+
+        .channel-item.active {
+            background: #37373d;
+            border-left-color: #007acc;
+        }
+
+        .channel-item.status {
+            color: #9cdcfe;
+        }
+
+        .channel-item.channel {
+            color: #4ec9b0;
+        }
+
+        /* Chat area */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 10px 20px;
+            background: #2d2d30;
+            border-bottom: 1px solid #3c3c3c;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-title {
+            font-weight: bold;
+            color: #4ec9b0;
+        }
+
+        .chat-topic {
+            font-size: 12px;
+            color: #858585;
+            margin-top: 2px;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .message {
+            margin-bottom: 4px;
+        }
+
+        .message .timestamp {
+            color: #858585;
+            margin-right: 8px;
+        }
+
+        .message .nick {
+            font-weight: bold;
+            margin-right: 4px;
+        }
+
+        .message.system {
+            color: #4ec9b0;
+        }
+
+        .message.error {
+            color: #f48771;
+        }
+
+        .message.join {
+            color: #b5cea8;
+        }
+
+        .message.part {
+            color: #ce9178;
+        }
+
+        .message.notice {
+            color: #dcdcaa;
+        }
+
+        /* Input area */
+        .input-area {
+            padding: 15px 20px;
+            background: #252526;
+            border-top: 1px solid #3c3c3c;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-container input {
+            flex: 1;
+            padding: 10px;
+            background: #3c3c3c;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #d4d4d4;
+            font-size: 14px;
+        }
+
+        /* User list */
+        .user-list {
+            width: 200px;
+            background: #252526;
+            border-left: 2px solid #007acc; /* Made more visible for debugging */
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* Fix flex child overflow */
+        }
+
+        .user-list-header {
+            padding: 10px;
+            background: #2d2d30;
+            border-bottom: 1px solid #3c3c3c;
+            font-weight: bold;
+            font-size: 12px;
+            color: #9cdcfe;
+        }
+
+        .user-list-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .user-item {
+            padding: 4px 8px;
+            font-size: 13px;
+            font-family: 'Consolas', monospace;
+        }
+
+        .user-item.operator {
+            color: #f48771;
+        }
+
+        .user-item.voice {
+            color: #dcdcaa;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 5px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #666;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar, .user-list {
+                width: 150px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🌐 IRC Web Client</h1>
+            <div class="connection-status">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span class="status-text" id="statusText">Disconnected</span>
+            </div>
+        </div>
+
+        <!-- Connection Panel -->
+        <div class="connection-panel" id="connectionPanel">
+            <div class="connection-form">
+                <div class="form-group">
+                    <label>Server</label>
+                    <input type="text" id="serverUrl" value="ws://localhost:8080/">
+                </div>
+                <div class="form-group">
+                    <label>Nickname</label>
+                    <input type="text" id="nickname" value="WebUser">
+                </div>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="username" value="webuser">
+                </div>
+                <div class="form-group">
+                    <label>Real Name</label>
+                    <input type="text" id="realname" value="Web User">
+                </div>
+                <div class="form-group">
+                    <button id="connectBtn" onclick="connect()">Connect</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Layout -->
+        <div class="main-layout">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-header">CHANNELS</div>
+                <div class="channel-list" id="channelList"></div>
+            </div>
+
+            <!-- Chat Area -->
+            <div class="chat-area">
+                <div class="chat-header">
+                    <div>
+                        <div class="chat-title" id="chatTitle">Status</div>
+                        <div class="chat-topic" id="chatTopic">Not connected</div>
+                    </div>
+                    <button class="danger" onclick="disconnect()" id="disconnectBtn" disabled>Disconnect</button>
+                </div>
+                <div class="messages-container" id="messagesContainer"></div>
+                <div class="input-area">
+                    <div class="input-container">
+                        <input type="text" id="messageInput" placeholder="Type a message or /command..." onkeypress="handleKeyPress(event)" disabled>
+                        <button onclick="sendMessage()" id="sendBtn" disabled>Send</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User List -->
+            <div class="user-list">
+                <div class="user-list-header">
+                    USERS (<span id="userCount">0</span>)
+                </div>
+                <div class="user-list-content" id="userListContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let ws = null;
+        let connected = false;
+        let currentNick = '';
+        let currentWindow = 'status';
+        let windows = {
+            status: { messages: [], topic: 'Not connected' }
+        };
+        let channels = new Map(); // channel -> { users: Set, topic: '' }
+
+        // Initialize
+        addWindow('status');
+        switchWindow('status');
+        addMessage('status', timestamp() + ' Welcome to IRC Web Client!', 'system');
+        addMessage('status', timestamp() + ' Enter your connection details above and click Connect.', 'system');
+
+        function addWindow(name) {
+            console.log('Adding window:', name); // Debug
+            if (!windows[name]) {
+                windows[name] = { messages: [], topic: '' };
+                console.log('Window created. All windows:', Object.keys(windows)); // Debug
+                updateChannelList();
+            }
+        }
+
+        function updateChannelList() {
+            const list = document.getElementById('channelList');
+            list.innerHTML = '';
+
+            // Add status window
+            const statusItem = document.createElement('div');
+            statusItem.className = 'channel-item status' + (currentWindow === 'status' ? ' active' : '');
+            statusItem.textContent = 'Status';
+            statusItem.onclick = () => switchWindow('status');
+            list.appendChild(statusItem);
+
+            // Add channel windows
+            Object.keys(windows).forEach(name => {
+                if (name !== 'status' && name.startsWith('#')) {
+                    const item = document.createElement('div');
+                    item.className = 'channel-item channel' + (currentWindow === name ? ' active' : '');
+                    item.textContent = name;
+                    item.onclick = () => switchWindow(name);
+                    list.appendChild(item);
+                }
+            });
+        }
+
+        function switchWindow(name) {
+            currentWindow = name;
+            document.getElementById('chatTitle').textContent = name === 'status' ? 'Status' : name;
+            document.getElementById('chatTopic').textContent = windows[name]?.topic || '';
+            
+            // Update messages
+            const container = document.getElementById('messagesContainer');
+            container.innerHTML = '';
+            windows[name]?.messages.forEach(msg => {
+                const el = document.createElement('div');
+                el.className = 'message ' + (msg.type || '');
+                el.innerHTML = msg.html;
+                container.appendChild(el);
+            });
+            container.scrollTop = container.scrollHeight;
+
+            // Update user list
+            updateUserList(name);
+            updateChannelList();
+        }
+
+        function updateUserList(channelName) {
+            const content = document.getElementById('userListContent');
+            const count = document.getElementById('userCount');
+            
+            if (!channelName.startsWith('#') || !channels.has(channelName)) {
+                content.innerHTML = '';
+                count.textContent = '0';
+                return;
+            }
+
+            const channel = channels.get(channelName);
+            const users = Array.from(channel.users).sort();
+            
+            content.innerHTML = '';
+            users.forEach(user => {
+                const item = document.createElement('div');
+                item.className = 'user-item';
+                
+                if (user.startsWith('@')) {
+                    item.classList.add('operator');
+                } else if (user.startsWith('+')) {
+                    item.classList.add('voice');
+                }
+                
+                item.textContent = user;
+                content.appendChild(item);
+            });
+            
+            count.textContent = users.length;
+        }
+
+        function addMessage(window, html, type = '') {
+            if (!windows[window]) {
+                addWindow(window);
+            }
+            windows[window].messages.push({ html, type });
+            
+            if (currentWindow === window) {
+                const container = document.getElementById('messagesContainer');
+                const el = document.createElement('div');
+                el.className = 'message ' + type;
+                el.innerHTML = html;
+                container.appendChild(el);
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        function timestamp() {
+            const now = new Date();
+            return `<span class="timestamp">[${now.toLocaleTimeString()}]</span>`;
+        }
+
+        function connect() {
+            const server = document.getElementById('serverUrl').value;
+            const nick = document.getElementById('nickname').value;
+            const user = document.getElementById('username').value;
+            const real = document.getElementById('realname').value;
+
+            if (!server || !nick || !user) {
+                addMessage('status', timestamp() + ' <span style="color: #f48771;">Please fill in all fields</span>', 'error');
+                return;
+            }
+
+            currentNick = nick;
+            addMessage('status', timestamp() + ' Connecting to ' + server + '...', 'system');
+
+            ws = new WebSocket(server);
+
+            ws.onopen = function() {
+                connected = true;
+                updateConnectionUI(true);
+                addMessage('status', timestamp() + ' <span style="color: #4ec9b0;">✓ Connected</span>', 'system');
+                
+                // Send registration
+                send('NICK ' + nick);
+                send('USER ' + user + ' 0 * :' + real);
+            };
+
+            ws.onmessage = function(event) {
+                handleIRCMessage(event.data);
+            };
+
+            ws.onerror = function() {
+                addMessage('status', timestamp() + ' <span style="color: #f48771;">Connection error</span>', 'error');
+            };
+
+            ws.onclose = function() {
+                connected = false;
+                updateConnectionUI(false);
+                addMessage('status', timestamp() + ' <span style="color: #ce9178;">Disconnected</span>', 'system');
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                send('QUIT :Goodbye');
+                ws.close();
+            }
+        }
+
+        function updateConnectionUI(isConnected) {
+            document.getElementById('statusIndicator').classList.toggle('connected', isConnected);
+            document.getElementById('statusText').textContent = isConnected ? 'Connected' : 'Disconnected';
+            document.getElementById('connectionPanel').classList.toggle('hidden', isConnected);
+            document.getElementById('connectBtn').disabled = isConnected;
+            document.getElementById('disconnectBtn').disabled = !isConnected;
+            document.getElementById('messageInput').disabled = !isConnected;
+            document.getElementById('sendBtn').disabled = !isConnected;
+            
+            if (isConnected) {
+                windows.status.topic = 'Connected to IRC';
+                if (currentWindow === 'status') {
+                    document.getElementById('chatTopic').textContent = windows.status.topic;
+                }
+            }
+        }
+
+        function send(msg) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(msg + '\r\n');
+                return true;
+            }
+            return false;
+        }
+
+        function handleIRCMessage(data) {
+            const lines = data.split('\r\n').filter(l => l);
+            
+            lines.forEach(line => {
+                console.log('IRC:', line); // Debug
+                
+                // Handle PING
+                if (line.startsWith('PING')) {
+                    const pong = line.replace('PING', 'PONG');
+                    send(pong);
+                    return;
+                }
+
+                // Parse IRC message
+                const parts = line.split(' ');
+                const prefix = line.startsWith(':') ? parts.shift().substring(1) : '';
+                const command = parts.shift();
+                
+                // Route message
+                switch(command) {
+                    case '001': // Welcome
+                    case '002':
+                    case '003':
+                    case '004':
+                    case '005':
+                    case '251': // LUSERS
+                    case '252':
+                    case '253':
+                    case '254':
+                    case '255':
+                    case '265':
+                    case '266':
+                    case '375': // MOTD
+                    case '372':
+                    case '376':
+                        addMessage('status', timestamp() + ' ' + parts.slice(1).join(' ').substring(1), 'system');
+                        break;
+                    
+                    case 'JOIN':
+                        handleJoin(prefix, parts[0]);
+                        break;
+                    
+                    case 'PART':
+                        handlePart(prefix, parts[0], parts.slice(1).join(' ').substring(1));
+                        break;
+                    
+                    case 'PRIVMSG':
+                        handlePrivmsg(prefix, parts[0], parts.slice(1).join(' ').substring(1));
+                        break;
+                    
+                    case 'TOPIC':
+                        // Topic change notification
+                        handleTopicChange(prefix, parts[0], parts.slice(1).join(' ').substring(1));
+                        break;
+                    
+                    case '332': // Topic reply
+                        handleTopic(parts[1], parts.slice(2).join(' ').substring(1));
+                        break;
+                    
+                    case '331': // No topic set
+                        handleTopic(parts[1], '');
+                        addMessage(parts[1], timestamp() + ' <span style="color: #858585;">No topic is set</span>', 'system');
+                        break;
+                    
+                    case '353': // Names list
+                        handleNames(parts[2], parts.slice(3).join(' ').substring(1).split(' '));
+                        break;
+                    
+                    case 'QUIT':
+                        handleQuit(prefix, parts.join(' ').substring(1));
+                        break;
+                    
+                    case 'NICK':
+                        handleNick(prefix, parts[0].substring(1));
+                        break;
+                    
+                    default:
+                        // Show in status window
+                        addMessage('status', timestamp() + ' ' + line, 'system');
+                }
+            });
+        }
+
+        function handleJoin(prefix, channel) {
+            const nick = prefix.split('!')[0];
+            channel = channel.replace(/^:/, ''); // Remove leading colon
+            
+            console.log('JOIN:', nick, 'to', channel); // Debug
+            
+            if (!channels.has(channel)) {
+                channels.set(channel, { users: new Set(), topic: '' });
+            }
+            
+            channels.get(channel).users.add(nick);
+            
+            if (nick === currentNick) {
+                console.log('We joined', channel); // Debug
+                addWindow(channel);
+                switchWindow(channel);
+                send('NAMES ' + channel);
+                send('TOPIC ' + channel);
+            }
+            
+            addMessage(channel, timestamp() + ' <span style="color: #b5cea8;">→ ' + nick + ' has joined</span>', 'join');
+            updateUserList(currentWindow);
+        }
+
+        function handlePart(prefix, channel, reason) {
+            const nick = prefix.split('!')[0];
+            channel = channel.replace(':', '');
+            
+            if (channels.has(channel)) {
+                channels.get(channel).users.delete(nick);
+                channels.get(channel).users.delete('@' + nick);
+                channels.get(channel).users.delete('+' + nick);
+            }
+            
+            const msg = reason ? ' (' + reason + ')' : '';
+            addMessage(channel, timestamp() + ' <span style="color: #ce9178;">← ' + nick + ' has left' + msg + '</span>', 'part');
+            updateUserList(currentWindow);
+        }
+
+        function handlePrivmsg(prefix, target, message) {
+            const nick = prefix.split('!')[0];
+            const window = target.startsWith('#') ? target : 'status';
+            
+            addMessage(window, timestamp() + ' <span class="nick" style="color: #dcdcaa;">&lt;' + nick + '&gt;</span> ' + escapeHtml(message));
+        }
+
+        function handleTopic(channel, topic) {
+            if (windows[channel]) {
+                windows[channel].topic = topic;
+                if (currentWindow === channel) {
+                    document.getElementById('chatTopic').textContent = topic;
+                }
+            }
+        }
+
+        function handleTopicChange(prefix, channel, topic) {
+            const nick = prefix.split('!')[0];
+            channel = channel.replace(/^:/, '');
+            
+            handleTopic(channel, topic);
+            
+            if (topic) {
+                addMessage(channel, timestamp() + ' <span style="color: #4ec9b0;">' + nick + ' changed topic to: ' + escapeHtml(topic) + '</span>', 'system');
+            } else {
+                addMessage(channel, timestamp() + ' <span style="color: #4ec9b0;">' + nick + ' removed the topic</span>', 'system');
+            }
+        }
+
+        function handleNames(channel, names) {
+            if (!channels.has(channel)) {
+                channels.set(channel, { users: new Set(), topic: '' });
+            }
+            
+            // Clear existing users first to avoid duplicates
+            channels.get(channel).users.clear();
+            
+            names.forEach(name => {
+                if (name) channels.get(channel).users.add(name);
+            });
+            
+            updateUserList(currentWindow);
+        }
+
+        function handleQuit(prefix, reason) {
+            const nick = prefix.split('!')[0];
+            
+            channels.forEach((data, channel) => {
+                if (data.users.has(nick) || data.users.has('@' + nick) || data.users.has('+' + nick)) {
+                    data.users.delete(nick);
+                    data.users.delete('@' + nick);
+                    data.users.delete('+' + nick);
+                    const msg = reason ? ' (' + reason + ')' : '';
+                    addMessage(channel, timestamp() + ' <span style="color: #ce9178;">← ' + nick + ' has quit' + msg + '</span>', 'part');
+                }
+            });
+            
+            updateUserList(currentWindow);
+        }
+
+        function handleNick(prefix, newNick) {
+            const oldNick = prefix.split('!')[0];
+            
+            if (oldNick === currentNick) {
+                currentNick = newNick;
+            }
+            
+            channels.forEach((data, channel) => {
+                const hadOp = data.users.has('@' + oldNick);
+                const hadVoice = data.users.has('+' + oldNick);
+                
+                data.users.delete(oldNick);
+                data.users.delete('@' + oldNick);
+                data.users.delete('+' + oldNick);
+                
+                if (hadOp) data.users.add('@' + newNick);
+                else if (hadVoice) data.users.add('+' + newNick);
+                else data.users.add(newNick);
+                
+                addMessage(channel, timestamp() + ' <span style="color: #9cdcfe;">' + oldNick + ' is now known as ' + newNick + '</span>', 'system');
+            });
+            
+            updateUserList(currentWindow);
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            // Handle /commands
+            if (text.startsWith('/')) {
+                const parts = text.substring(1).split(' ');
+                const cmd = parts[0].toUpperCase();
+                const args = parts.slice(1);
+                
+                switch(cmd) {
+                    case 'JOIN':
+                    case 'J':
+                        if (args.length > 0) send('JOIN ' + args.join(' '));
+                        break;
+                    
+                    case 'PART':
+                    case 'LEAVE':
+                        const channel = args.length > 0 ? args[0] : currentWindow;
+                        send('PART ' + channel);
+                        break;
+                    
+                    case 'MSG':
+                    case 'PRIVMSG':
+                        if (args.length > 1) {
+                            const target = args[0];
+                            const msg = args.slice(1).join(' ');
+                            send('PRIVMSG ' + target + ' :' + msg);
+                            addMessage(target.startsWith('#') ? target : 'status', 
+                                      timestamp() + ' <span class="nick" style="color: #dcdcaa;">&lt;' + currentNick + '&gt;</span> ' + escapeHtml(msg));
+                        }
+                        break;
+                    
+                    case 'WHOIS':
+                        if (args.length > 0) send('WHOIS ' + args[0]);
+                        break;
+                    
+                    case 'WHO':
+                        send('WHO ' + (args.length > 0 ? args[0] : currentWindow));
+                        break;
+                    
+                    case 'LIST':
+                        send('LIST');
+                        break;
+                    
+                    case 'NAMES':
+                        send('NAMES ' + (args.length > 0 ? args[0] : currentWindow));
+                        break;
+                    
+                    case 'TOPIC':
+                        if (currentWindow.startsWith('#')) {
+                            if (args.length > 0) {
+                                send('TOPIC ' + currentWindow + ' :' + args.join(' '));
+                            } else {
+                                send('TOPIC ' + currentWindow);
+                            }
+                        }
+                        break;
+                    
+                    case 'QUIT':
+                        disconnect();
+                        break;
+                    
+                    default:
+                        send(text.substring(1)); // Send as raw IRC command
+                }
+            } else {
+                // Regular message
+                if (currentWindow.startsWith('#')) {
+                    send('PRIVMSG ' + currentWindow + ' :' + text);
+                    addMessage(currentWindow, timestamp() + ' <span class="nick" style="color: #dcdcaa;">&lt;' + currentNick + '&gt;</span> ' + escapeHtml(text));
+                } else {
+                    addMessage('status', timestamp() + ' <span style="color: #f48771;">You cannot send messages in the status window. Join a channel first.</span>', 'error');
+                }
+            }
+            
+            input.value = '';
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
