@@ -29,6 +29,7 @@ type Client struct {
 	registered     bool
 	channels       map[string]bool // channel names the client has joined
 	modes          map[rune]bool   // user modes (o=operator, i=invisible, etc.)
+	awayMessage    string          // away message (empty if not away)
 	connType       ConnectionType
 	lastActivity   time.Time
 	lastPing       time.Time
@@ -286,5 +287,26 @@ func (c *Client) GetModes() string {
 // IsServerOperator checks if the client is a server operator
 func (c *Client) IsServerOperator() bool {
 	return c.HasMode('o')
+}
+
+// SetAway sets the away message (empty string = not away)
+func (c *Client) SetAway(message string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.awayMessage = message
+}
+
+// GetAwayMessage returns the away message
+func (c *Client) GetAwayMessage() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.awayMessage
+}
+
+// IsAway checks if the client is marked as away
+func (c *Client) IsAway() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.awayMessage != ""
 }
 

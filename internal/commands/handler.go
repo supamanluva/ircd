@@ -109,6 +109,12 @@ func (h *Handler) Handle(c *client.Client, msg *parser.Message) error {
 		return h.handleInvite(c, msg)
 	case "OPER":
 		return h.handleOper(c, msg)
+	case "AWAY":
+		return h.handleAway(c, msg)
+	case "USERHOST":
+		return h.handleUserhost(c, msg)
+	case "ISON":
+		return h.handleIson(c, msg)
 	default:
 		// Unknown command
 		h.sendNumeric(c, ERR_UNKNOWNCOMMAND, msg.Command+" :Unknown command")
@@ -460,6 +466,11 @@ func (h *Handler) handleMessage(c *client.Client, msg *parser.Message, cmdType s
 
 		msgText := fmt.Sprintf(":%s %s %s :%s", c.GetHostmask(), cmdType, target, message)
 		targetClient.Send(msgText)
+
+		// If target is away, notify sender (only for PRIVMSG, not NOTICE)
+		if cmdType == "PRIVMSG" && targetClient.IsAway() {
+			h.sendNumeric(c, RPL_AWAY, fmt.Sprintf("%s :%s", target, targetClient.GetAwayMessage()))
+		}
 
 		h.logger.Debug("Private message", "from", c.GetNickname(), "to", target)
 	}
@@ -958,12 +969,17 @@ func (h *Handler) sendWhoReply(c *client.Client, target *client.Client, channel 
 	}
 
 	// Build flags: H=here, G=away, *=ircop, @=chanop, +=voice
-	flags := "H" // H = here (not away)
+	flags := "H" // H = here (not away), G = gone (away)
+	if target.IsAway() {
+		flags = "G" // User is away
+	}
 	if target.HasMode('o') {
 		flags += "*" // IRC operator
 	}
 	if ch != nil && ch.IsOperator(target) {
 		flags += "@" // Channel operator
+	} else if ch != nil && ch.IsVoiced(target) {
+		flags += "+" // Voiced
 	}
 
 	// Format: <channel> <user> <host> <server> <nick> <flags> :<hopcount> <realname>
@@ -1009,6 +1025,11 @@ func (h *Handler) handleWhois(c *client.Client, msg *parser.Message) error {
 
 	// RPL_WHOISUSER: <nick> <user> <host> * :<realname>
 	h.sendNumeric(c, RPL_WHOISUSER, fmt.Sprintf("%s %s %s * :User", targetNick, user, host))
+
+	// RPL_AWAY: Show if user is away
+	if target.IsAway() {
+		h.sendNumeric(c, RPL_AWAY, fmt.Sprintf("%s :%s", targetNick, target.GetAwayMessage()))
+	}
 
 	// RPL_WHOISSERVER: <nick> <server> :<server info>
 	h.sendNumeric(c, RPL_WHOISSERVER, fmt.Sprintf("%s %s :IRC Server", targetNick, h.serverName))
@@ -1178,6 +1199,130 @@ func (h *Handler) handleOper(c *client.Client, msg *parser.Message) error {
 	h.sendNumeric(c, RPL_YOUREOPER, ":You are now an IRC operator")
 
 	h.logger.Info("User gained operator status", "nickname", c.GetNickname(), "oper_name", name)
+
+	return nil
+}
+
+// handleAway handles the AWAY command
+// AWAY [<message>]
+func (h *Handler) handleAway(c *client.Client, msg *parser.Message) error {
+	if !c.IsRegistered() {
+		h.sendNumeric(c, ERR_NOTREGISTERED, ":You have not registered")
+		return nil
+	}
+
+	// If no message provided, mark as no longer away
+	if !msg.HasParam(0) || msg.GetParam(0) == "" {
+		c.SetAway("")
+		h.sendNumeric(c, RPL_UNAWAY, ":You are no longer marked as being away")
+		h.logger.Debug("User no longer away", "nickname", c.GetNickname())
+		return nil
+	}
+
+	// Set away message
+	awayMsg := msg.GetParam(0)
+	c.SetAway(awayMsg)
+	h.sendNumeric(c, RPL_NOWAWAY, ":You have been marked as being away")
+
+	h.logger.Debug("User marked as away", "nickname", c.GetNickname(), "message", awayMsg)
+
+	return nil
+}
+
+// handleUserhost handles the USERHOST command
+// USERHOST <nickname> [<nickname> ...]
+func (h *Handler) handleUserhost(c *client.Client, msg *parser.Message) error {
+	if !c.IsRegistered() {
+		h.sendNumeric(c, ERR_NOTREGISTERED, ":You have not registered")
+		return nil
+	}
+
+	if !msg.HasParam(0) {
+		h.sendNumeric(c, ERR_NEEDMOREPARAMS, "USERHOST :Not enough parameters")
+		return nil
+	}
+
+	// Build response for up to 5 nicknames (RFC limit)
+	var responses []string
+	maxNicks := 5
+
+	for i := 0; i < len(msg.Params) && len(responses) < maxNicks; i++ {
+		nick := msg.Params[i]
+		target := h.clients.GetClient(nick)
+		
+		if target != nil {
+			// Parse hostmask to get user and host
+			hostmask := target.GetHostmask()
+			parts := strings.Split(hostmask, "!")
+			user := nick
+			host := "unknown"
+			if len(parts) == 2 {
+				userHost := parts[1]
+				hostParts := strings.Split(userHost, "@")
+				if len(hostParts) == 2 {
+					user = hostParts[0]
+					host = hostParts[1]
+				}
+			}
+			
+			// Format: <nick>[*]=<+|-><user>@<host>
+			// * = operator, + = not away, - = away
+			operFlag := ""
+			if target.IsServerOperator() {
+				operFlag = "*"
+			}
+			
+			awayFlag := "+"
+			if target.IsAway() {
+				awayFlag = "-"
+			}
+			
+			response := fmt.Sprintf("%s%s=%s%s@%s",
+				target.GetNickname(),
+				operFlag,
+				awayFlag,
+				user,
+				host)
+			
+			responses = append(responses, response)
+		}
+	}
+
+	if len(responses) > 0 {
+		h.sendNumeric(c, RPL_USERHOST, ":"+strings.Join(responses, " "))
+	}
+
+	return nil
+}
+
+// handleIson handles the ISON command
+// ISON <nickname> [<nickname> ...]
+func (h *Handler) handleIson(c *client.Client, msg *parser.Message) error {
+	if !c.IsRegistered() {
+		h.sendNumeric(c, ERR_NOTREGISTERED, ":You have not registered")
+		return nil
+	}
+
+	if !msg.HasParam(0) {
+		h.sendNumeric(c, ERR_NEEDMOREPARAMS, "ISON :Not enough parameters")
+		return nil
+	}
+
+	// Check which nicknames are online
+	var onlineNicks []string
+
+	for _, nick := range msg.Params {
+		if h.clients.GetClient(nick) != nil {
+			onlineNicks = append(onlineNicks, nick)
+		}
+	}
+
+	// Always send RPL_ISON, even if empty
+	if len(onlineNicks) > 0 {
+		h.sendNumeric(c, RPL_ISON, ":"+strings.Join(onlineNicks, " "))
+	} else {
+		h.sendNumeric(c, RPL_ISON, ":")
+	}
 
 	return nil
 }
