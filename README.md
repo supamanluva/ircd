@@ -10,11 +10,13 @@ A modern, production-ready IRC server implementation written in Go, following RF
 ## 🚀 Features
 
 ### Core IRC Functionality
-- ✅ **17 IRC Commands** - NICK, USER, JOIN, PART, PRIVMSG, NOTICE, QUIT, PING, PONG, NAMES, TOPIC, MODE, KICK, WHO, WHOIS, LIST, INVITE
+- ✅ **23 IRC Commands** - NICK, USER, JOIN, PART, PRIVMSG, NOTICE, QUIT, PING, PONG, NAMES, TOPIC, MODE, KICK, WHO, WHOIS, LIST, INVITE, OPER, AWAY, USERHOST, ISON
 - ✅ **Multi-channel Support** - Create and manage multiple chat rooms
-- ✅ **User Management** - Nickname registration, hostmask tracking
+- ✅ **User Management** - Nickname registration, hostmask tracking, away status
 - ✅ **Channel Operators** - First user becomes operator, grant/revoke operator status
-- ✅ **User & Channel Modes** - +i (invisible), +o (operator), +m (moderated), +n (no external), +t (topic protection), +b (ban)
+- ✅ **User & Channel Modes** - +i (invisible), +o (operator), +m (moderated), +n (no external), +t (topic protection), +b (ban), +k (key), +v (voice)
+- ✅ **Server Operators** - OPER command with bcrypt authentication
+- ✅ **Presence System** - AWAY, USERHOST, ISON commands
 
 ### Security & Stability
 - 🔒 **TLS/SSL Encryption** - Secure connections on port 7000
@@ -108,18 +110,28 @@ ircd/
 - [x] Production deployment guide
 - [x] Deployment testing and validation
 
-### � Phase 6: Advanced Features (35% Complete - In Progress)
-- [x] WHO command (list users in channels)
-- [x] WHOIS command (detailed user information)
-- [x] LIST command (list channels)
+### ✅ Phase 6: Advanced Features (Complete)
+- [x] WHO command (list users in channels with flags)
+- [x] WHOIS command (detailed user information with idle time)
+- [x] LIST command (list channels with topics and counts)
 - [x] INVITE command (invite users to channels)
-- [ ] Channel keys (+k mode) for password-protected channels
-- [ ] Voice mode (+v) for moderated channels
-- [ ] OPER command for server operator authentication
-- [ ] WebSocket bridge for browser-based clients
-- [ ] AWAY, USERHOST, ISON commands
-- [ ] Channel limit (+l mode)
-- [ ] Wildcard support for ban masks
+- [x] Channel keys (+k mode) for password-protected channels
+- [x] Voice mode (+v) for speaking in moderated channels
+- [x] OPER command for server operator authentication (bcrypt)
+- [x] AWAY command for away status with messages
+- [x] USERHOST command for user@host information
+- [x] ISON command for online presence checking
+- [x] Enhanced WHO with away status (G/H flags)
+- [x] Enhanced WHOIS with away messages
+- [x] PRIVMSG away notifications
+
+**Total Commands: 23** | **Channel Modes: 8** | **User Modes: 3**
+
+### 🎯 Future Phases
+- Phase 7: WebSocket support for browser-based clients
+- Phase 8: Services integration (NickServ, ChanServ)
+- Phase 9: Server linking for IRC networks
+- Phase 10: Advanced features (SASL, message history, push notifications)
 
 ## Getting Started
 
