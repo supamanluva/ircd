@@ -107,10 +107,23 @@ func loadConfig(path string) (*server.Config, error) {
 				KeyFile  string `yaml:"key_file"`
 			} `yaml:"tls"`
 		} `yaml:"server"`
+		Operators []struct {
+			Name     string `yaml:"name"`
+			Password string `yaml:"password"`
+		} `yaml:"operators"`
 	}
 
 	if err := yaml.Unmarshal(data, &configData); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Build operators list
+	operators := make([]server.Operator, len(configData.Operators))
+	for i, op := range configData.Operators {
+		operators[i] = server.Operator{
+			Name:     op.Name,
+			Password: op.Password,
+		}
 	}
 
 	// Build config
@@ -125,6 +138,7 @@ func loadConfig(path string) (*server.Config, error) {
 		TLSKeyFile:   configData.Server.TLS.KeyFile,
 		PingInterval: time.Duration(configData.Server.PingInterval) * time.Second,
 		Timeout:      time.Duration(configData.Server.Timeout) * time.Second,
+		Operators:    operators,
 	}
 
 	// Set defaults for missing values

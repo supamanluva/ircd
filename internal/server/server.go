@@ -27,6 +27,13 @@ type Config struct {
 	TLSKeyFile   string
 	PingInterval time.Duration
 	Timeout      time.Duration
+	Operators    []Operator // Server operators for OPER command
+}
+
+// Operator represents a server operator
+type Operator struct {
+	Name     string
+	Password string // bcrypt hashed password
 }
 
 // Server represents the IRC server
@@ -142,8 +149,17 @@ func New(cfg *Config, log *logger.Logger) (*Server, error) {
 		shutdown:    make(chan struct{}),
 	}
 	
+	// Convert config operators to commands.Operator
+	cmdOperators := make([]commands.Operator, len(cfg.Operators))
+	for i, op := range cfg.Operators {
+		cmdOperators[i] = commands.Operator{
+			Name:     op.Name,
+			Password: op.Password,
+		}
+	}
+	
 	// Initialize command handler with server as registry
-	srv.handler = commands.New(cfg.ServerName, log, srv, srv)
+	srv.handler = commands.New(cfg.ServerName, log, srv, srv, cmdOperators)
 	
 	return srv, nil
 }

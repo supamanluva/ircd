@@ -48,6 +48,16 @@ auth:
   enabled: false
   require_password: false
 
+# Server operators
+# Password should be bcrypt hashed
+# Generate with: htpasswd -bnBC 10 "" yourpassword | tr -d ':\n' | sed 's/$2y/$2a/'
+# Or use online bcrypt generator
+operators:
+  - name: "admin"
+    password: "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"  # "admin123"
+  - name: "oper"
+    password: "$2a$10$e0MYzXyjpJS7Pd94qMTnYu8qgx7Ky5.XYVzMSrVPXpLDXbDdSQT0W"  # "oper456"
+
 # Logging
 logging:
   level: "info"  # debug, info, warn, error

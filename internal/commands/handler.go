@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/supamanluva/ircd/internal/channel"
 	"github.com/supamanluva/ircd/internal/client"
 	"github.com/supamanluva/ircd/internal/logger"
@@ -17,6 +19,7 @@ type Handler struct {
 	logger     *logger.Logger
 	clients    ClientRegistry
 	channels   ChannelRegistry
+	operators  map[string]string // name -> bcrypt password hash
 }
 
 // ClientRegistry interface for managing clients
@@ -37,13 +40,26 @@ type ChannelRegistry interface {
 // CommandFunc is the signature for command handler functions
 type CommandFunc func(c *client.Client, msg *parser.Message) error
 
+// Operator represents a server operator configuration
+type Operator struct {
+	Name     string
+	Password string // bcrypt hashed
+}
+
 // New creates a new command handler
-func New(serverName string, log *logger.Logger, clients ClientRegistry, channels ChannelRegistry) *Handler {
+func New(serverName string, log *logger.Logger, clients ClientRegistry, channels ChannelRegistry, operators []Operator) *Handler {
+	// Build operator map for quick lookup
+	operMap := make(map[string]string)
+	for _, op := range operators {
+		operMap[op.Name] = op.Password
+	}
+	
 	return &Handler{
 		serverName: serverName,
 		logger:     log,
 		clients:    clients,
 		channels:   channels,
+		operators:  operMap,
 	}
 }
 
@@ -91,6 +107,8 @@ func (h *Handler) Handle(c *client.Client, msg *parser.Message) error {
 		return h.handleList(c, msg)
 	case "INVITE":
 		return h.handleInvite(c, msg)
+	case "OPER":
+		return h.handleOper(c, msg)
 	default:
 		// Unknown command
 		h.sendNumeric(c, ERR_UNKNOWNCOMMAND, msg.Command+" :Unknown command")
@@ -1119,6 +1137,47 @@ func (h *Handler) handleInvite(c *client.Client, msg *parser.Message) error {
 	target.Send(inviteMsg)
 
 	h.logger.Info("User invited to channel", "channel", channelName, "target", targetNick, "by", c.GetNickname())
+
+	return nil
+}
+
+// handleOper handles the OPER command
+// OPER <name> <password>
+func (h *Handler) handleOper(c *client.Client, msg *parser.Message) error {
+	if !c.IsRegistered() {
+		h.sendNumeric(c, ERR_NOTREGISTERED, ":You have not registered")
+		return nil
+	}
+
+	if len(msg.Params) < 2 {
+		h.sendNumeric(c, ERR_NEEDMOREPARAMS, "OPER :Not enough parameters")
+		return nil
+	}
+
+	name := msg.Params[0]
+	password := msg.Params[1]
+
+	// Check if operator exists
+	hashedPassword, exists := h.operators[name]
+	if !exists {
+		h.sendNumeric(c, ERR_PASSWDMISMATCH, ":Password incorrect")
+		h.logger.Warn("OPER attempt with unknown name", "name", name, "client", c.GetNickname())
+		return nil
+	}
+
+	// Verify password using bcrypt
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+	if err != nil {
+		h.sendNumeric(c, ERR_PASSWDMISMATCH, ":Password incorrect")
+		h.logger.Warn("OPER attempt with wrong password", "name", name, "client", c.GetNickname())
+		return nil
+	}
+
+	// Grant operator status
+	c.SetMode('o', true)
+	h.sendNumeric(c, RPL_YOUREOPER, ":You are now an IRC operator")
+
+	h.logger.Info("User gained operator status", "nickname", c.GetNickname(), "oper_name", name)
 
 	return nil
 }
