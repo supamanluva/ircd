@@ -133,11 +133,22 @@ ircd/
 
 **Total Commands: 23** | **Channel Modes: 8** | **User Modes: 3** | **Protocols: TCP, TLS, WebSocket**
 
-### 🎯 Future Phases
-- Phase 7: WebSocket support for browser-based clients
-- Phase 8: Services integration (NickServ, ChanServ)
-- Phase 9: Server linking for IRC networks
-- Phase 10: Advanced features (SASL, message history, push notifications)
+### 🎯 Completed Phases
+- ✅ Phase 1-5: Core IRC functionality (commands, channels, security)
+- ✅ Phase 6: Advanced features (WebSocket, web client, operators)
+- ✅ Phase 7: Server linking for distributed IRC networks (TS6 protocol)
+  - Server-to-server authentication and linking
+  - Burst mode for state synchronization
+  - Message routing and propagation (PRIVMSG, JOIN, MODE, TOPIC, etc.)
+  - SQUIT and error handling
+
+### 🚀 Future Enhancements
+- **Services integration** (NickServ, ChanServ, MemoServ)
+- **Advanced security** (SASL authentication, certificate fingerprinting)
+- **Message history** (ZNC-style bouncer features)
+- **Server-to-server TLS** (encrypted server links)
+- **IRCv3 capabilities** (message tags, account tracking)
+- **Mesh topology** (multi-hop server routing)
 
 ## Getting Started
 
