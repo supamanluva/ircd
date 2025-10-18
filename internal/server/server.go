@@ -828,3 +828,41 @@ func (s *Server) PropagateInvite(nick, user, host, uid, target, channel string) 
 	return nil
 }
 
+// DisconnectServer disconnects a linked server (Phase 7.4.5)
+func (s *Server) DisconnectServer(serverName, reason string) error {
+	if s.network == nil {
+		return fmt.Errorf("network not initialized")
+	}
+	
+	// Find the server by name
+	server := s.network.GetServerByName(serverName)
+	if server == nil {
+		return fmt.Errorf("no such server: %s", serverName)
+	}
+	
+	s.logger.Info("Disconnecting server", "server", serverName, "reason", reason)
+	
+	// Send SQUIT to other servers before disconnecting
+	squitMsg := &linking.Message{
+		Source:  s.config.ServerID,
+		Command: "SQUIT",
+		Params:  []string{serverName, reason},
+	}
+	s.router.BroadcastToServers(squitMsg, s.config.ServerID)
+	
+	// Clean up all state from the disconnected server
+	s.cleanupDisconnectedServer(server, reason)
+	
+	// Close the connection to the server
+	link := s.linkRegistry.GetLink(server.SID)
+	if link != nil {
+		link.Conn.Close()
+		s.linkRegistry.RemoveLink(server.SID)
+	}
+	
+	// Remove server from network state
+	s.network.RemoveServer(server.SID)
+	
+	return nil
+}
+

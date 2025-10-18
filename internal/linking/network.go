@@ -283,6 +283,34 @@ func (n *Network) GetServer(sid string) (*Server, bool) {
 	return srv, exists
 }
 
+// GetServerByName finds a server by name (Phase 7.4.5)
+func (n *Network) GetServerByName(name string) *Server {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	
+	for _, srv := range n.Servers {
+		if srv.Name == name {
+			return srv
+		}
+	}
+	return nil
+}
+
+// GetUsersBySID returns all users from a specific server (Phase 7.4.5)
+func (n *Network) GetUsersBySID(sid string) []*RemoteUser {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	
+	users := make([]*RemoteUser, 0)
+	for _, user := range n.Users {
+		// UID format is SID + 6 chars, so check if UID starts with the SID
+		if len(user.UID) >= len(sid) && user.UID[:len(sid)] == sid {
+			users = append(users, user)
+		}
+	}
+	return users
+}
+
 // AddChannel adds or updates a channel in the network
 func (n *Network) AddChannel(ch *RemoteChannel) {
 	n.mu.Lock()

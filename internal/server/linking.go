@@ -129,6 +129,9 @@ func (s *Server) handleLinkConnection(conn net.Conn) {
 		msg, err := link.ReadMessage()
 		if err != nil {
 			s.logger.Info("Link connection closed", "name", server.Name, "error", err)
+			// Clean up disconnected server (Phase 7.4.5)
+			s.cleanupDisconnectedServer(server, fmt.Sprintf("Connection lost: %v", err))
+			s.network.RemoveServer(server.SID)
 			break
 		}
 		
@@ -140,6 +143,9 @@ func (s *Server) handleLinkConnection(conn net.Conn) {
 			pong := linking.BuildPONG(s.network.LocalSID, msg.Source)
 			if err := link.WriteMessage(pong); err != nil {
 				s.logger.Error("Failed to send PONG", "name", server.Name, "error", err)
+				// Clean up on send error (Phase 7.4.5)
+				s.cleanupDisconnectedServer(server, "Failed to send PONG")
+				s.network.RemoveServer(server.SID)
 				break
 			}
 			continue
@@ -244,6 +250,9 @@ func (s *Server) ConnectToServer(linkCfg LinkConfig) error {
 		defer func() {
 			s.linkRegistry.RemoveLink(server.SID)
 			conn.Close()
+			// Clean up disconnected server (Phase 7.4.5)
+			s.cleanupDisconnectedServer(server, "Connection lost")
+			s.network.RemoveServer(server.SID)
 		}()
 		
 		for {
@@ -323,6 +332,9 @@ func (s *Server) handleLinkMessage(msg *linking.Message, fromServer *linking.Ser
 	
 	case "INVITE":
 		return s.handleLinkInvite(msg, fromServer)
+	
+	case "SQUIT":
+		return s.handleLinkSquit(msg, fromServer)
 	
 	default:
 		s.logger.Debug("Unhandled link message", "command", msg.Command, "from", fromServer.Name)
@@ -746,5 +758,81 @@ func (s *Server) handleLinkInvite(msg *linking.Message, fromServer *linking.Serv
 		"inviter", sourceUser.Nick, "target", targetNick, "channel", channel)
 	
 	return nil
+}
+
+// handleLinkSquit handles SQUIT from remote servers (Phase 7.4.5)
+func (s *Server) handleLinkSquit(msg *linking.Message, fromServer *linking.Server) error {
+	if len(msg.Params) < 1 {
+		return fmt.Errorf("invalid SQUIT: need at least 1 param")
+	}
+	
+	serverName := msg.Params[0]
+	reason := "Remote SQUIT"
+	if len(msg.Params) > 1 {
+		reason = msg.Params[1]
+	}
+	
+	s.logger.Info("Received SQUIT from remote", "from", fromServer.Name, "target", serverName, "reason", reason)
+	
+	// Find the server
+	server := s.network.GetServerByName(serverName)
+	if server == nil {
+		s.logger.Debug("SQUIT for unknown server", "server", serverName)
+		return nil
+	}
+	
+	// Clean up state from the disconnected server
+	s.cleanupDisconnectedServer(server, reason)
+	
+	// Remove link if we have a direct connection
+	link := s.linkRegistry.GetLink(server.SID)
+	if link != nil {
+		link.Conn.Close()
+		s.linkRegistry.RemoveLink(server.SID)
+	}
+	
+	// Remove server from network
+	s.network.RemoveServer(server.SID)
+	
+	return nil
+}
+
+// cleanupDisconnectedServer cleans up all state from a disconnected server (Phase 7.4.5)
+func (s *Server) cleanupDisconnectedServer(server *linking.Server, reason string) {
+	s.logger.Info("Cleaning up disconnected server", "server", server.Name, "sid", server.SID)
+	
+	// Get all users from the disconnected server
+	remoteUsers := s.network.GetUsersBySID(server.SID)
+	
+	// Build netsplit message
+	netsplitMsg := fmt.Sprintf("*.net *.split")
+	if reason != "" {
+		netsplitMsg = reason
+	}
+	
+	// For each remote user, notify local users in common channels
+	for _, remoteUser := range remoteUsers {
+		s.logger.Debug("Removing remote user from netsplit", "nick", remoteUser.Nick, "uid", remoteUser.UID)
+		
+		// Build QUIT message for the remote user
+		quitMsg := fmt.Sprintf(":%s!%s@%s QUIT :%s",
+			remoteUser.Nick, remoteUser.User, remoteUser.Host, netsplitMsg)
+		
+		// Find all local channels that might have this remote user
+		// and broadcast the QUIT to local members
+		s.mu.RLock()
+		for _, ch := range s.channels {
+			if ch.GetMemberCount() > 0 {
+				// Broadcast to local members
+				ch.BroadcastAll(quitMsg)
+			}
+		}
+		s.mu.RUnlock()
+		
+		// Remove the user from network state
+		s.network.RemoveUser(remoteUser.UID)
+	}
+	
+	s.logger.Info("Cleaned up disconnected server", "server", server.Name, "users_removed", len(remoteUsers))
 }
 

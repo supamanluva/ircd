@@ -66,6 +66,9 @@ type MessageRouter interface {
 	PropagateKick(nick, user, host, uid, channel, target, reason string) error
 	// PropagateInvite propagates an INVITE to remote servers (Phase 7.4.4)
 	PropagateInvite(nick, user, host, uid, target, channel string) error
+	
+	// DisconnectServer disconnects a linked server (Phase 7.4.5)
+	DisconnectServer(serverName, reason string) error
 }
 
 // CommandFunc is the signature for command handler functions
@@ -152,6 +155,8 @@ func (h *Handler) Handle(c *client.Client, msg *parser.Message) error {
 		return h.handleUserhost(c, msg)
 	case "ISON":
 		return h.handleIson(c, msg)
+	case "SQUIT":
+		return h.handleSquit(c, msg)
 	default:
 		// Unknown command
 		h.sendNumeric(c, ERR_UNKNOWNCOMMAND, msg.Command+" :Unknown command")
@@ -1482,6 +1487,49 @@ func (h *Handler) handleOper(c *client.Client, msg *parser.Message) error {
 	h.sendNumeric(c, RPL_YOUREOPER, ":You are now an IRC operator")
 
 	h.logger.Info("User gained operator status", "nickname", c.GetNickname(), "oper_name", name)
+
+	return nil
+}
+
+// handleSquit handles the SQUIT command (Phase 7.4.5)
+// SQUIT <server> <comment>
+func (h *Handler) handleSquit(c *client.Client, msg *parser.Message) error {
+	if !c.IsRegistered() {
+		h.sendNumeric(c, ERR_NOTREGISTERED, ":You have not registered")
+		return nil
+	}
+
+	// Only operators can use SQUIT
+	if !c.HasMode('o') {
+		h.sendNumeric(c, ERR_NOPRIVILEGES, ":Permission Denied- You're not an IRC operator")
+		return nil
+	}
+
+	if len(msg.Params) < 1 {
+		h.sendNumeric(c, ERR_NEEDMOREPARAMS, "SQUIT :Not enough parameters")
+		return nil
+	}
+
+	serverName := msg.Params[0]
+	reason := "No reason"
+	if len(msg.Params) > 1 {
+		reason = msg.Params[1]
+	}
+
+	// Check if router is available
+	if h.router == nil {
+		h.sendNumeric(c, ERR_UNKNOWNCOMMAND, "SQUIT :Server linking not enabled")
+		return nil
+	}
+
+	// Disconnect the server
+	if err := h.router.DisconnectServer(serverName, reason); err != nil {
+		h.sendNumeric(c, ERR_NOSUCHSERVER, serverName+" :"+err.Error())
+		h.logger.Warn("SQUIT failed", "server", serverName, "error", err, "operator", c.GetNickname())
+		return nil
+	}
+
+	h.logger.Info("Server disconnected via SQUIT", "server", serverName, "reason", reason, "operator", c.GetNickname())
 
 	return nil
 }
