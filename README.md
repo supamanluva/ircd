@@ -33,6 +33,13 @@ A modern, production-ready IRC server implementation written in Go, following RF
 - 📋 **Channel Listing** - LIST command to browse channels
 - 📨 **Invitations** - INVITE users to channels
 
+### Distributed Network (NEW! ✨)
+- 🌐 **Server Linking** - Connect multiple IRC servers into one network
+- 🔗 **Hub & Leaf Topology** - Scalable distributed architecture
+- 🔄 **Real-time Sync** - Users on any server can see and message users on all other servers
+- 📡 **TS6 Protocol** - Industry-standard server-to-server protocol
+- ⚡ **Zero-Config Discovery** - Automatic network state synchronization
+
 ### Production Ready
 - 🐳 **Docker Support** - Docker Compose with optional Prometheus/Grafana monitoring
 - 🔧 **systemd Integration** - Service file with security hardening
@@ -133,14 +140,41 @@ ircd/
 
 **Total Commands: 23** | **Channel Modes: 8** | **User Modes: 3** | **Protocols: TCP, TLS, WebSocket**
 
+### ✅ Phase 7: Server Linking & Distributed IRC (Complete) ⭐ NEW!
+- [x] **Server-to-Server Protocol** (TS6)
+  - Server authentication and handshake
+  - Unique server IDs (SID) and user IDs (UID)
+  - Hub and leaf topology support
+  - Auto-connect configuration
+- [x] **Burst Mode Synchronization**
+  - Complete state transfer on link
+  - SJOIN for channels with members
+  - User and channel state propagation
+- [x] **Message Routing & Propagation**
+  - Cross-server PRIVMSG and NOTICE
+  - JOIN, PART, QUIT propagation
+  - NICK changes across network
+  - MODE, TOPIC, KICK, INVITE routing
+- [x] **Network State Management**
+  - Remote user tracking with UIDs
+  - Remote channel membership
+  - Network-wide NAMES lists
+  - Clean state cleanup on QUIT/disconnect
+- [x] **Verified Working** ✅
+  - Users on hub can see/message users on leaf
+  - Full bidirectional communication
+  - Real-time synchronization
+  - Production-ready distributed network
+
+**🚀 See [docs/SERVER_LINKING_SETUP.md](docs/SERVER_LINKING_SETUP.md) for complete setup guide!**
+
 ### 🎯 Completed Phases
 - ✅ Phase 1-5: Core IRC functionality (commands, channels, security)
 - ✅ Phase 6: Advanced features (WebSocket, web client, operators)
-- ✅ Phase 7: Server linking for distributed IRC networks (TS6 protocol)
-  - Server-to-server authentication and linking
-  - Burst mode for state synchronization
-  - Message routing and propagation (PRIVMSG, JOIN, MODE, TOPIC, etc.)
-  - SQUIT and error handling
+- ✅ Phase 7: **Server linking for distributed IRC networks** (TS6 protocol) ⭐ NEW!
+  - Full multi-server support with hub/leaf topology
+  - Cross-server user visibility and messaging
+  - See [docs/SERVER_LINKING_SETUP.md](docs/SERVER_LINKING_SETUP.md) for setup
 
 ### 🚀 Future Enhancements
 - **Services integration** (NickServ, ChanServ, MemoServ)
@@ -152,11 +186,13 @@ ircd/
 
 ## Getting Started
 
-### Prerequisites
+### Quick Start (Single Server)
+
+#### Prerequisites
 
 - Go 1.21 or higher
 
-### Installation
+#### Installation
 
 ```bash
 # Clone the repository
@@ -236,6 +272,42 @@ weechat -r "/server add local localhost/7000 -ssl"
 python3 -m http.server 8000
 # Navigate to: http://localhost:8000/tests/websocket_client.html
 ```
+
+### 🌐 Distributed Network Setup (Multi-Server)
+
+Want to run multiple servers in a network where users can talk across servers?
+
+**Scenario 1: You're running the HUB** and letting others connect their leaf servers:
+- See [docs/SERVER_LINKING_SETUP.md](docs/SERVER_LINKING_SETUP.md#scenario-1-running-a-hub-server)
+- Configure your hub to accept server links
+- Share connection details with leaf admins
+
+**Scenario 2: You're connecting a LEAF** to someone else's hub:
+- See [docs/SERVER_LINKING_SETUP.md](docs/SERVER_LINKING_SETUP.md#scenario-2-connecting-a-leaf-to-remote-hub)
+- Get hub connection details from the hub admin
+- Configure your leaf to auto-connect
+
+**Quick Example - Leaf connecting to Hub:**
+
+```yaml
+# Your leaf config
+linking:
+  enabled: true
+  server_id: "002"              # Unique ID (not 001!)
+  password: "shared_secret"     # Must match hub
+  links:
+    - name: "irc.example.com"   # Hub's name
+      sid: "001"                 # Hub's ID
+      host: "hub.example.com"    # Hub's address
+      port: 7000                 # Hub's link port
+      password: "shared_secret"  # Same password
+      auto_connect: true         # Connect automatically
+      is_hub: true
+```
+
+Start your leaf, and users can connect to either server and see everyone! 🎉
+
+**Full guide:** [docs/SERVER_LINKING_SETUP.md](docs/SERVER_LINKING_SETUP.md)
 
 ## Security
 

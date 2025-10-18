@@ -41,14 +41,32 @@ channels:
   persist_topics: false
 
 # Server Linking - Hub Server
+# 
+# This server acts as a HUB - it ACCEPTS connections from leaf servers.
+# Leaf servers will connect TO this server.
+#
+# To use:
+# 1. Set linking.enabled to true
+# 2. Choose a unique server_id (e.g., "001" for hub)
+# 3. Set a STRONG password (share this with leaf admins)
+# 4. Open firewall port for linking.port (default 7777)
+# 5. Share these details with leaf server admins:
+#    - Your server address (IP or domain)
+#    - linking.port (7777)
+#    - linking.password
+#    - Your server_id ("0AA")
+#    - Your server.name ("hub.test")
+#
+# No "links" section needed - leafs will connect to you!
+#
 linking:
   enabled: true
-  host: "0.0.0.0"
-  port: 7777
-  server_id: "0AA"
+  host: "0.0.0.0"                       # Listen on all interfaces for server links
+  port: 7777                             # Port for server-to-server connections
+  server_id: "0AA"                       # Unique 3-char ID for this server
   description: "Test IRC Hub Server"
-  password: "linkpass123"
+  password: "linkpass123"                # CHANGE THIS! Share securely with leaf admins
   
   links:
-    # Expecting leaf server to connect
-    # No auto-connect needed for hub
+    # No links needed for hub - just wait for leafs to connect
+    # Leave this empty or omit entirely

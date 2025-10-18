@@ -41,20 +41,39 @@ channels:
   persist_topics: false
 
 # Server Linking - Leaf Server
+#
+# This server acts as a LEAF - it CONNECTS to a hub server.
+# This server will initiate the connection to the hub.
+#
+# To use:
+# 1. Get connection details from your hub admin:
+#    - Hub address (IP or domain)
+#    - Hub link port
+#    - Hub server_id
+#    - Hub server name
+#    - Link password
+# 2. Set linking.enabled to true
+# 3. Choose a unique server_id (NOT the same as hub! e.g., "002", "003", etc.)
+# 4. Set linking.password to match the hub's password
+# 5. Configure the "links" section below with hub details
+# 6. Set auto_connect to true
+#
+# The leaf will automatically connect to the hub on startup!
+#
 linking:
   enabled: true
-  host: "0.0.0.0"
-  port: 7778
-  server_id: "1BB"
+  host: "0.0.0.0"                       # Your server's link listener (in case hub connects back)
+  port: 7778                             # YOUR link port (must be different from hub!)
+  server_id: "1BB"                       # Unique 3-char ID (DIFFERENT from hub's "0AA"!)
   description: "Test IRC Leaf Server"
-  password: "linkpass123"
+  password: "linkpass123"                # Must MATCH hub's password!
   
   links:
-    # Connect to hub
-    - name: "hub.test"
-      sid: "0AA"
-      host: "127.0.0.1"
-      port: 7777
-      password: "linkpass123"
-      auto_connect: true
-      is_hub: true
+    # Configure the HUB server connection here
+    - name: "hub.test"                   # Hub's server.name (from hub admin)
+      sid: "0AA"                          # Hub's server_id (from hub admin)
+      host: "127.0.0.1"                   # Hub's IP or domain (CHANGE for remote hub!)
+      port: 7777                          # Hub's linking.port (from hub admin)
+      password: "linkpass123"             # Hub's linking.password (must match!)
+      auto_connect: true                  # Automatically connect on startup
+      is_hub: true                        # This is a hub server (keep as true)
