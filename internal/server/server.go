@@ -760,3 +760,71 @@ func (s *Server) PropagateNick(oldNick, newNick, user, host, uid string, ts int6
 	return nil
 }
 
+// PropagateMode propagates a MODE change to all linked servers (Phase 7.4.4)
+func (s *Server) PropagateMode(nick, user, host, uid, channel, modeString string, ts int64) error {
+	if s.network == nil {
+		return fmt.Errorf("network not initialized")
+	}
+	
+	msg := &linking.Message{
+		Source:  uid,
+		Command: "MODE",
+		Params:  []string{channel, modeString, fmt.Sprintf("%d", ts)},
+	}
+	
+	// Broadcast to all linked servers except the source server
+	s.router.BroadcastToServers(msg, s.config.ServerID)
+	return nil
+}
+
+// PropagateTopic propagates a TOPIC change to all linked servers (Phase 7.4.4)
+func (s *Server) PropagateTopic(nick, user, host, uid, channel, topic string, ts int64) error {
+	if s.network == nil {
+		return fmt.Errorf("network not initialized")
+	}
+	
+	msg := &linking.Message{
+		Source:  uid,
+		Command: "TOPIC",
+		Params:  []string{channel, topic, fmt.Sprintf("%d", ts)},
+	}
+	
+	// Broadcast to all linked servers except the source server
+	s.router.BroadcastToServers(msg, s.config.ServerID)
+	return nil
+}
+
+// PropagateKick propagates a KICK to all linked servers (Phase 7.4.4)
+func (s *Server) PropagateKick(nick, user, host, uid, channel, target, reason string) error {
+	if s.network == nil {
+		return fmt.Errorf("network not initialized")
+	}
+	
+	msg := &linking.Message{
+		Source:  uid,
+		Command: "KICK",
+		Params:  []string{channel, target, reason},
+	}
+	
+	// Broadcast to all linked servers except the source server
+	s.router.BroadcastToServers(msg, s.config.ServerID)
+	return nil
+}
+
+// PropagateInvite propagates an INVITE to all linked servers (Phase 7.4.4)
+func (s *Server) PropagateInvite(nick, user, host, uid, target, channel string) error {
+	if s.network == nil {
+		return fmt.Errorf("network not initialized")
+	}
+	
+	msg := &linking.Message{
+		Source:  uid,
+		Command: "INVITE",
+		Params:  []string{target, channel},
+	}
+	
+	// Broadcast to all linked servers except the source server
+	s.router.BroadcastToServers(msg, s.config.ServerID)
+	return nil
+}
+

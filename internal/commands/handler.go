@@ -57,6 +57,15 @@ type MessageRouter interface {
 	PropagateQuit(nick, user, host, uid, message string) error
 	// PropagateNick propagates a NICK change to remote servers (Phase 7.4.3)
 	PropagateNick(oldNick, newNick, user, host, uid string, ts int64) error
+	
+	// PropagateMode propagates a MODE change to remote servers (Phase 7.4.4)
+	PropagateMode(nick, user, host, uid, channel, modeString string, ts int64) error
+	// PropagateTopic propagates a TOPIC change to remote servers (Phase 7.4.4)
+	PropagateTopic(nick, user, host, uid, channel, topic string, ts int64) error
+	// PropagateKick propagates a KICK to remote servers (Phase 7.4.4)
+	PropagateKick(nick, user, host, uid, channel, target, reason string) error
+	// PropagateInvite propagates an INVITE to remote servers (Phase 7.4.4)
+	PropagateInvite(nick, user, host, uid, target, channel string) error
 }
 
 // CommandFunc is the signature for command handler functions
@@ -736,6 +745,29 @@ func (h *Handler) handleTopic(c *client.Client, msg *parser.Message) error {
 	topicMsg := fmt.Sprintf(":%s TOPIC %s :%s", c.GetHostmask(), channelName, newTopic)
 	ch.BroadcastAll(topicMsg)
 
+	// Propagate TOPIC to remote servers (Phase 7.4.4)
+	if h.router != nil {
+		parts := strings.SplitN(c.GetHostmask(), "!", 2)
+		user := ""
+		host := ""
+		if len(parts) == 2 {
+			userhost := strings.SplitN(parts[1], "@", 2)
+			if len(userhost) == 2 {
+				user = userhost[0]
+				host = userhost[1]
+			}
+		}
+		
+		uid := c.GetUID()
+		if uid == "" {
+			uid = c.GetNickname()
+		}
+		
+		if err := h.router.PropagateTopic(c.GetNickname(), user, host, uid, channelName, newTopic, time.Now().Unix()); err != nil {
+			h.logger.Debug("Failed to propagate TOPIC", "error", err)
+		}
+	}
+
 	h.logger.Info("Topic changed", "channel", channelName, "by", c.GetNickname())
 
 	return nil
@@ -1021,6 +1053,35 @@ func (h *Handler) handleChannelMode(c *client.Client, msg *parser.Message) error
 	// Broadcast mode change
 	if changes != "" {
 		ch.BroadcastAll(fmt.Sprintf(":%s MODE %s %s", c.GetHostmask(), channelName, changes))
+		
+		// Propagate MODE to remote servers (Phase 7.4.4)
+		if h.router != nil {
+			parts := strings.SplitN(c.GetHostmask(), "!", 2)
+			user := ""
+			host := ""
+			if len(parts) == 2 {
+				userhost := strings.SplitN(parts[1], "@", 2)
+				if len(userhost) == 2 {
+					user = userhost[0]
+					host = userhost[1]
+				}
+			}
+			
+			uid := c.GetUID()
+			if uid == "" {
+				uid = c.GetNickname()
+			}
+			
+			// Build full mode string with args for propagation
+			fullModeStr := changes
+			if len(modeArgs) > 0 {
+				fullModeStr += " " + strings.Join(modeArgs[:argIndex], " ")
+			}
+			
+			if err := h.router.PropagateMode(c.GetNickname(), user, host, uid, channelName, fullModeStr, time.Now().Unix()); err != nil {
+				h.logger.Debug("Failed to propagate MODE", "error", err)
+			}
+		}
 	}
 
 	return nil
@@ -1074,6 +1135,29 @@ func (h *Handler) handleKick(c *client.Client, msg *parser.Message) error {
 	// Broadcast KICK message
 	kickMsg := fmt.Sprintf(":%s KICK %s %s :%s", c.GetHostmask(), channelName, targetNick, reason)
 	ch.BroadcastAll(kickMsg)
+
+	// Propagate KICK to remote servers (Phase 7.4.4)
+	if h.router != nil {
+		parts := strings.SplitN(c.GetHostmask(), "!", 2)
+		user := ""
+		host := ""
+		if len(parts) == 2 {
+			userhost := strings.SplitN(parts[1], "@", 2)
+			if len(userhost) == 2 {
+				user = userhost[0]
+				host = userhost[1]
+			}
+		}
+		
+		uid := c.GetUID()
+		if uid == "" {
+			uid = c.GetNickname()
+		}
+		
+		if err := h.router.PropagateKick(c.GetNickname(), user, host, uid, channelName, targetNick, reason); err != nil {
+			h.logger.Debug("Failed to propagate KICK", "error", err)
+		}
+	}
 
 	// Remove target from channel
 	ch.RemoveMember(targetClient)
@@ -1332,6 +1416,29 @@ func (h *Handler) handleInvite(c *client.Client, msg *parser.Message) error {
 	// Send INVITE notification to target
 	inviteMsg := fmt.Sprintf(":%s INVITE %s %s", c.GetHostmask(), targetNick, channelName)
 	target.Send(inviteMsg)
+
+	// Propagate INVITE to remote servers (Phase 7.4.4)
+	if h.router != nil {
+		parts := strings.SplitN(c.GetHostmask(), "!", 2)
+		user := ""
+		host := ""
+		if len(parts) == 2 {
+			userhost := strings.SplitN(parts[1], "@", 2)
+			if len(userhost) == 2 {
+				user = userhost[0]
+				host = userhost[1]
+			}
+		}
+		
+		uid := c.GetUID()
+		if uid == "" {
+			uid = c.GetNickname()
+		}
+		
+		if err := h.router.PropagateInvite(c.GetNickname(), user, host, uid, targetNick, channelName); err != nil {
+			h.logger.Debug("Failed to propagate INVITE", "error", err)
+		}
+	}
 
 	h.logger.Info("User invited to channel", "channel", channelName, "target", targetNick, "by", c.GetNickname())
 

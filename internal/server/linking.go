@@ -312,7 +312,17 @@ func (s *Server) handleLinkMessage(msg *linking.Message, fromServer *linking.Ser
 	case "NICK":
 		return s.handleLinkNick(msg, fromServer)
 	
-	// TODO (Phase 7.4.4): Handle MODE, TOPIC, KICK, INVITE
+	case "MODE":
+		return s.handleLinkMode(msg, fromServer)
+	
+	case "TOPIC":
+		return s.handleLinkTopic(msg, fromServer)
+	
+	case "KICK":
+		return s.handleLinkKick(msg, fromServer)
+	
+	case "INVITE":
+		return s.handleLinkInvite(msg, fromServer)
 	
 	default:
 		s.logger.Debug("Unhandled link message", "command", msg.Command, "from", fromServer.Name)
@@ -558,6 +568,182 @@ func (s *Server) handleLinkNick(msg *linking.Message, fromServer *linking.Server
 	
 	s.logger.Debug("Delivered remote NICK",
 		"old", oldNick, "new", newNick)
+	
+	return nil
+}
+
+// handleLinkMode handles MODE from remote servers (Phase 7.4.4)
+func (s *Server) handleLinkMode(msg *linking.Message, fromServer *linking.Server) error {
+	if len(msg.Params) < 2 {
+		return fmt.Errorf("invalid MODE: need at least 2 params")
+	}
+	
+	channel := msg.Params[0]
+	modeString := msg.Params[1]
+	sourceUID := msg.Source
+	
+	// Get source user info
+	sourceUser, ok := s.network.GetUserByUID(sourceUID)
+	if !ok {
+		s.logger.Debug("Unknown user setting MODE", "uid", sourceUID, "channel", channel)
+		return fmt.Errorf("unknown user %s", sourceUID)
+	}
+	
+	// Check if we have local members in this channel
+	s.mu.RLock()
+	ch, exists := s.channels[channel]
+	s.mu.RUnlock()
+	
+	if !exists {
+		// No local users in this channel, nothing to do
+		s.logger.Debug("Remote MODE on channel with no local users",
+			"user", sourceUser.Nick, "channel", channel)
+		return nil
+	}
+	
+	// Broadcast MODE to all local members
+	modeMsg := fmt.Sprintf(":%s!%s@%s MODE %s %s",
+		sourceUser.Nick, sourceUser.User, sourceUser.Host, channel, modeString)
+	ch.BroadcastAll(modeMsg)
+	
+	s.logger.Debug("Delivered remote MODE",
+		"user", sourceUser.Nick, "channel", channel, "mode", modeString)
+	
+	return nil
+}
+
+// handleLinkTopic handles TOPIC from remote servers (Phase 7.4.4)
+func (s *Server) handleLinkTopic(msg *linking.Message, fromServer *linking.Server) error {
+	if len(msg.Params) < 2 {
+		return fmt.Errorf("invalid TOPIC: need at least 2 params")
+	}
+	
+	channel := msg.Params[0]
+	topic := msg.Params[1]
+	sourceUID := msg.Source
+	
+	// Get source user info
+	sourceUser, ok := s.network.GetUserByUID(sourceUID)
+	if !ok {
+		s.logger.Debug("Unknown user setting TOPIC", "uid", sourceUID, "channel", channel)
+		return fmt.Errorf("unknown user %s", sourceUID)
+	}
+	
+	// Check if we have local members in this channel
+	s.mu.RLock()
+	ch, exists := s.channels[channel]
+	s.mu.RUnlock()
+	
+	if !exists {
+		// No local users in this channel, nothing to do
+		s.logger.Debug("Remote TOPIC on channel with no local users",
+			"user", sourceUser.Nick, "channel", channel)
+		return nil
+	}
+	
+	// Update local channel topic
+	ch.SetTopic(topic)
+	
+	// Broadcast TOPIC to all local members
+	topicMsg := fmt.Sprintf(":%s!%s@%s TOPIC %s :%s",
+		sourceUser.Nick, sourceUser.User, sourceUser.Host, channel, topic)
+	ch.BroadcastAll(topicMsg)
+	
+	s.logger.Debug("Delivered remote TOPIC",
+		"user", sourceUser.Nick, "channel", channel)
+	
+	return nil
+}
+
+// handleLinkKick handles KICK from remote servers (Phase 7.4.4)
+func (s *Server) handleLinkKick(msg *linking.Message, fromServer *linking.Server) error {
+	if len(msg.Params) < 3 {
+		return fmt.Errorf("invalid KICK: need at least 3 params")
+	}
+	
+	channel := msg.Params[0]
+	targetNick := msg.Params[1]
+	reason := msg.Params[2]
+	sourceUID := msg.Source
+	
+	// Get source user info
+	sourceUser, ok := s.network.GetUserByUID(sourceUID)
+	if !ok {
+		s.logger.Debug("Unknown user KICKing", "uid", sourceUID, "channel", channel)
+		return fmt.Errorf("unknown user %s", sourceUID)
+	}
+	
+	// Check if we have local members in this channel
+	s.mu.RLock()
+	ch, exists := s.channels[channel]
+	s.mu.RUnlock()
+	
+	if !exists {
+		// No local users in this channel, nothing to do
+		s.logger.Debug("Remote KICK on channel with no local users",
+			"user", sourceUser.Nick, "channel", channel)
+		return nil
+	}
+	
+	// Broadcast KICK to all local members
+	kickMsg := fmt.Sprintf(":%s!%s@%s KICK %s %s :%s",
+		sourceUser.Nick, sourceUser.User, sourceUser.Host, channel, targetNick, reason)
+	ch.BroadcastAll(kickMsg)
+	
+	// If the kicked user is local, remove them from the channel
+	s.mu.RLock()
+	targetClient, isLocal := s.clients[targetNick]
+	s.mu.RUnlock()
+	
+	if isLocal && targetClient != nil {
+		ch.RemoveMember(targetClient)
+		targetClient.PartChannel(channel)
+		s.logger.Debug("Removed local user from channel after remote KICK",
+			"user", targetNick, "channel", channel)
+	}
+	
+	s.logger.Debug("Delivered remote KICK",
+		"kicker", sourceUser.Nick, "channel", channel, "target", targetNick)
+	
+	return nil
+}
+
+// handleLinkInvite handles INVITE from remote servers (Phase 7.4.4)
+func (s *Server) handleLinkInvite(msg *linking.Message, fromServer *linking.Server) error {
+	if len(msg.Params) < 2 {
+		return fmt.Errorf("invalid INVITE: need at least 2 params")
+	}
+	
+	targetNick := msg.Params[0]
+	channel := msg.Params[1]
+	sourceUID := msg.Source
+	
+	// Get source user info
+	sourceUser, ok := s.network.GetUserByUID(sourceUID)
+	if !ok {
+		s.logger.Debug("Unknown user INVITEing", "uid", sourceUID)
+		return fmt.Errorf("unknown user %s", sourceUID)
+	}
+	
+	// Check if target is a local user
+	s.mu.RLock()
+	targetClient, isLocal := s.clients[targetNick]
+	s.mu.RUnlock()
+	
+	if !isLocal || targetClient == nil {
+		// Target not local, nothing to do
+		s.logger.Debug("Remote INVITE for non-local user",
+			"inviter", sourceUser.Nick, "target", targetNick, "channel", channel)
+		return nil
+	}
+	
+	// Send INVITE notification to target
+	inviteMsg := fmt.Sprintf(":%s!%s@%s INVITE %s %s",
+		sourceUser.Nick, sourceUser.User, sourceUser.Host, targetNick, channel)
+	targetClient.Send(inviteMsg)
+	
+	s.logger.Debug("Delivered remote INVITE",
+		"inviter", sourceUser.Nick, "target", targetNick, "channel", channel)
 	
 	return nil
 }
