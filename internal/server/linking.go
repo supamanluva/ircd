@@ -787,7 +787,7 @@ func (s *Server) handleLinkSquit(msg *linking.Message, fromServer *linking.Serve
 	// Remove link if we have a direct connection
 	link, exists := s.linkRegistry.GetLink(server.SID)
 	if exists && link != nil {
-		link.Conn.Close()
+		link.Close()
 		s.linkRegistry.RemoveLink(server.SID)
 	}
 	

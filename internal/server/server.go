@@ -856,7 +856,7 @@ func (s *Server) DisconnectServer(serverName, reason string) error {
 	// Close the connection to the server
 	link, exists := s.linkRegistry.GetLink(server.SID)
 	if exists && link != nil {
-		link.Conn.Close()
+		link.Close()
 		s.linkRegistry.RemoveLink(server.SID)
 	}
 	

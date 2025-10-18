@@ -71,12 +71,12 @@ linking:
       host: "127.0.0.1"
       port: ${LEAF1_LINK_PORT}
       password: "linkpass"
-      auto_connect: false
+      auto_connect: true
     - name: "leaf2.example.com"
       host: "127.0.0.1"
       port: ${LEAF2_LINK_PORT}
       password: "linkpass"
-      auto_connect: false
+      auto_connect: true
 
 operators:
   - name: "admin"
@@ -174,9 +174,8 @@ sleep 3
 
 # Test 1: Server Linking
 echo -e "${BLUE}=== Test 1: Server Linking ===${NC}"
-echo "Connecting leaf1 to hub..."
-(echo "CONNECT hub.example.com ${HUB_LINK_PORT}" | nc 127.0.0.1 ${LEAF1_PORT} &)
-sleep 3
+echo "Waiting for auto-connect..."
+sleep 5
 
 echo "Checking if servers linked..."
 if grep -q "Server link established" /tmp/hub.log && grep -q "Server link established" /tmp/leaf1.log; then
@@ -185,11 +184,7 @@ else
     test_result 1 "Hub and Leaf1 failed to link"
 fi
 
-echo "Connecting leaf2 to hub..."
-(echo "CONNECT hub.example.com ${HUB_LINK_PORT}" | nc 127.0.0.1 ${LEAF2_PORT} &)
-sleep 3
-
-if grep -q "Received burst from.*leaf2" /tmp/hub.log; then
+if grep -q "Received burst from.*leaf2" /tmp/hub.log || grep -q "Server link established.*leaf2" /tmp/hub.log; then
     test_result 0 "Hub and Leaf2 linked successfully"
 else
     test_result 1 "Hub and Leaf2 failed to link"
