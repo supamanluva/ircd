@@ -222,7 +222,26 @@ func (h *Handler) handleNick(c *client.Client, msg *parser.Message) error {
 	}
 
 	oldNick := c.GetNickname()
+	
+	// If changing nickname (already registered), update the registry map
+	if c.IsRegistered() && oldNick != "" && oldNick != newNick {
+		// Remove old nickname from registry
+		h.clients.RemoveClient(c)
+	}
+	
 	c.SetNickname(newNick)
+	
+	// If changing nickname (already registered), add with new nickname
+	if c.IsRegistered() && oldNick != "" && oldNick != newNick {
+		if err := h.clients.AddClient(c); err != nil {
+			h.logger.Warn("Failed to re-add client with new nickname", "error", err, "oldNick", oldNick, "newNick", newNick)
+			// Try to restore old nickname if registration fails
+			c.SetNickname(oldNick)
+			h.clients.AddClient(c)
+			h.sendNumeric(c, ERR_NICKNAMEINUSE, newNick+" :Nickname is already in use")
+			return nil
+		}
+	}
 
 	// If client is already registered, broadcast the nick change
 	if c.IsRegistered() && oldNick != "" {
@@ -268,7 +287,12 @@ func (h *Handler) handleNick(c *client.Client, msg *parser.Message) error {
 	if c.IsRegistered() && oldNick == "" {
 		h.logger.Info("Attempting to add newly registered client", "nick", newNick, "isRegistered", c.IsRegistered(), "oldNick", oldNick)
 		if err := h.clients.AddClient(c); err != nil {
-			h.logger.Warn("Failed to add client to registry", "error", err, "nick", newNick)
+			h.logger.Warn("Failed to add client to registry - nickname collision detected", "error", err, "nick", newNick)
+			// Nickname collision during registration - force disconnect
+			c.SetRegistered(false)
+			c.Send(fmt.Sprintf(":%s %s %s :Nickname collision detected during registration", 
+				h.serverName, ERR_NICKNAMEINUSE, newNick))
+			return fmt.Errorf("nickname collision")
 		} else {
 			h.logger.Info("Successfully added client to registry", "nick", newNick)
 		}
@@ -854,6 +878,14 @@ func (h *Handler) tryRegister(c *client.Client) {
 
 	// Check if we have both nickname and username
 	if c.GetNickname() == "" || !c.HasUsername() {
+		return
+	}
+	
+	// Double-check nickname isn't in use (race condition protection)
+	if h.clients.IsNicknameInUse(c.GetNickname()) {
+		h.logger.Warn("Nickname collision during registration attempt", "nick", c.GetNickname())
+		// Send error message to client
+		h.sendNumeric(c, ERR_NICKNAMEINUSE, c.GetNickname()+" :Nickname is already in use")
 		return
 	}
 

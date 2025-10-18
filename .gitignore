@@ -41,3 +41,9 @@ config/config.local.yaml
 *.pem
 *.key
 *.crt
+certs/
+
+# Temporary files
+/tmp/
+*.tmp
+nohup.out

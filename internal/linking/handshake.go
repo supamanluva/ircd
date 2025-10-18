@@ -178,6 +178,10 @@ func (l *Link) HandshakeServer(network *Network, password string) error {
 				return fmt.Errorf("duplicate SERVER command")
 			}
 			
+			// Debug: log the raw SERVER message
+			fmt.Printf("[DEBUG] Received SERVER message: %+v\n", msg)
+			fmt.Printf("[DEBUG] Params: %v\n", msg.Params)
+			
 			name, _, description, err := ParseSERVER(msg)
 			if err != nil {
 				return fmt.Errorf("invalid SERVER: %v", err)

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quick IRC WebSocket Test</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            padding: 20px; 
+            background: #1e1e1e; 
+            color: #d4d4d4; 
+        }
+        #output { 
+            background: #252526; 
+            border: 1px solid #3c3c3c; 
+            padding: 10px; 
+            height: 400px; 
+            overflow-y: auto; 
+            margin: 10px 0; 
+            white-space: pre-wrap;
+        }
+        input { 
+            width: 80%; 
+            padding: 8px; 
+            background: #252526; 
+            border: 1px solid #3c3c3c; 
+            color: #d4d4d4;
+        }
+        button { 
+            padding: 8px 20px; 
+            background: #0e639c; 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+        }
+        button:hover { background: #1177bb; }
+        .connected { color: #4ec9b0; }
+        .disconnected { color: #f48771; }
+    </style>
+</head>
+<body>
+    <h2>IRC WebSocket Quick Test</h2>
+    <div>
+        <input type="text" id="wsUrl" value="ws://localhost:8080" placeholder="ws://server:8080">
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+        <span id="status" class="disconnected">Disconnected</span>
+    </div>
+    <div id="output"></div>
+    <div>
+        <input type="text" id="command" placeholder="IRC command (e.g., NICK mynick)" onkeypress="if(event.keyCode==13) send()">
+        <button onclick="send()">Send</button>
+    </div>
+
+    <script>
+        let ws = null;
+        const output = document.getElementById('output');
+        const status = document.getElementById('status');
+
+        function log(msg, isReceived = false) {
+            const prefix = isReceived ? '← ' : '→ ';
+            output.textContent += prefix + msg + '\n';
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+            log('Connecting to ' + url + '...');
+            
+            ws = new WebSocket(url);
+            
+            ws.onopen = () => {
+                log('Connected!');
+                status.textContent = 'Connected';
+                status.className = 'connected';
+            };
+            
+            ws.onmessage = (event) => {
+                log(event.data, true);
+            };
+            
+            ws.onerror = (error) => {
+                log('Error: ' + error);
+            };
+            
+            ws.onclose = () => {
+                log('Disconnected');
+                status.textContent = 'Disconnected';
+                status.className = 'disconnected';
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function send() {
+            const cmd = document.getElementById('command').value;
+            if (ws && ws.readyState === WebSocket.OPEN && cmd) {
+                ws.send(cmd + '\r\n');
+                log(cmd);
+                document.getElementById('command').value = '';
+            }
+        }
+
+        // Quick start commands
+        log('Quick start commands:');
+        log('1. Click Connect');
+        log('2. Send: NICK yournick');
+        log('3. Send: USER yournick 0 * :Real Name');
+        log('4. Send: JOIN #test');
+        log('5. Send: PRIVMSG #test :Hello!');
+        log('---');
+    </script>
+</body>
+</html>

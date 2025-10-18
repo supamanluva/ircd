@@ -1,7 +1,7 @@
 # IRC Server Configuration
 
 server:
-  name: "IRCServer"
+  name: "irc.example.com"
   host: "0.0.0.0"
   port: 6667
   tls:
@@ -36,9 +36,9 @@ websocket:
     # - "http://localhost:8080"
     # - "https://example.com"
   tls:
-    enabled: false
-    cert_file: ""
-    key_file: ""
+    enabled: true
+    cert_file: "server.crt"
+    key_file: "server.key"
   
 # Rate limiting
 rate_limit:
@@ -57,9 +57,9 @@ auth:
 # Or use online bcrypt generator
 operators:
   - name: "admin"
-    password: "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"  # "admin123"
+    password: "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"  # Example hash - CHANGE THIS!
   - name: "oper"
-    password: "$2a$10$e0MYzXyjpJS7Pd94qMTnYu8qgx7Ky5.XYVzMSrVPXpLDXbDdSQT0W"  # "oper456"
+    password: "$2a$10$e0MYzXyjpJS7Pd94qMTnYu8qgx7Ky5.XYVzMSrVPXpLDXbDdSQT0W"  # Example hash - CHANGE THIS!
 
 # Logging
 logging:
@@ -80,24 +80,24 @@ linking:
   port: 7777      # Port for incoming server connections
   server_id: "0AA" # Server ID (SID): 3 chars [0-9][A-Z0-9][A-Z0-9]
   description: "IRC Server Hub"
-  password: "linkpass123"  # Password for incoming links
+  password: "ChangeThisLinkPassword!"  # Password for incoming links - CHANGE THIS!
   
   # Configured links to other servers
   links:
     # Example hub server
     # - name: "hub.example.net"
     #   sid: "1BB"
-    #   host: "10.0.0.1"
+    #   host: "192.0.2.1"
     #   port: 7777
-    #   password: "linkpass123"
+    #   password: "ChangeThisLinkPassword!"
     #   auto_connect: true
     #   is_hub: true
     
     # Example leaf server
     # - name: "leaf.example.net"
     #   sid: "2CC"
-    #   host: "10.0.0.2"
+    #   host: "192.0.2.2"
     #   port: 7777
-    #   password: "linkpass456"
+    #   password: "ChangeThisLinkPassword!"
     #   auto_connect: false
     #   is_hub: false
