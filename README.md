@@ -277,6 +277,7 @@ python3 -m http.server 8000
 
 Want to run multiple servers in a network where users can talk across servers?
 
+**🎨 Visual Guide**: See [VISUAL_SETUP_GUIDE.md](VISUAL_SETUP_GUIDE.md) for diagrams and decision tree!  
 **📋 Quick Start**: See [QUICK_START_LINKING.md](QUICK_START_LINKING.md) for one-page setup guide!
 
 **Scenario 1: You're running the HUB** and letting others connect their leaf servers:
