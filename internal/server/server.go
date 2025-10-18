@@ -12,6 +12,7 @@ import (
 	"github.com/supamanluva/ircd/internal/channel"
 	"github.com/supamanluva/ircd/internal/client"
 	"github.com/supamanluva/ircd/internal/commands"
+	"github.com/supamanluva/ircd/internal/linking"
 	"github.com/supamanluva/ircd/internal/logger"
 	"github.com/supamanluva/ircd/internal/parser"
 	"github.com/supamanluva/ircd/internal/websocket"
@@ -37,6 +38,15 @@ type Config struct {
 	WebSocketTLS     bool
 	WebSocketCert    string
 	WebSocketKey     string
+	
+	// Server linking configuration
+	LinkingEnabled  bool
+	LinkingHost     string
+	LinkingPort     int
+	ServerID        string // SID (3 chars: 0AA, 1BB, etc)
+	ServerDesc      string // Server description
+	LinkPassword    string // Password for incoming links
+	Links           []LinkConfig // Configured links to other servers
 }
 
 // Operator represents a server operator
@@ -45,16 +55,29 @@ type Operator struct {
 	Password string // bcrypt hashed password
 }
 
+// LinkConfig represents a configured server link
+type LinkConfig struct {
+	Name        string // Server name
+	SID         string // Server ID
+	Host        string // Hostname/IP
+	Port        int    // Link port
+	Password    string // Link password
+	AutoConnect bool   // Auto-connect on startup
+	IsHub       bool   // Can this server link other servers?
+}
+
 // Server represents the IRC server
 type Server struct {
 	config         *Config
 	logger         *logger.Logger
 	listener       net.Listener
 	tlsListener    net.Listener
+	linkListener   net.Listener // Server linking listener
 	wsServer       *http.Server
 	clients        map[string]*client.Client  // nickname -> client
 	clientsAddr    map[string]*client.Client  // address -> client
 	channels       map[string]*channel.Channel
+	network        *linking.Network           // Network state (linked servers, remote users)
 	mu             sync.RWMutex
 	shutdown       chan struct{}
 	handler        *commands.Handler
@@ -159,6 +182,12 @@ func New(cfg *Config, log *logger.Logger) (*Server, error) {
 		shutdown:    make(chan struct{}),
 	}
 	
+	// Initialize network state if linking is enabled
+	if cfg.LinkingEnabled && cfg.ServerID != "" {
+		srv.network = linking.NewNetwork(cfg.ServerID, cfg.ServerName)
+		log.Info("Server linking enabled with SID: %s", cfg.ServerID)
+	}
+	
 	// Convert config operators to commands.Operator
 	cmdOperators := make([]commands.Operator, len(cfg.Operators))
 	for i, op := range cfg.Operators {
@@ -199,6 +228,16 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.config.WebSocketEnabled {
 		if err := s.startWebSocketListener(ctx); err != nil {
 			s.logger.Error("Failed to start WebSocket listener", "error", err)
+		}
+	}
+
+	// Start server linking listener if enabled
+	if s.config.LinkingEnabled {
+		if err := s.StartLinkListener(); err != nil {
+			s.logger.Error("Failed to start link listener", "error", err)
+		} else {
+			// Auto-connect to configured servers
+			s.AutoConnect()
 		}
 	}
 

@@ -71,3 +71,33 @@ logging:
 channels:
   max_per_user: 10
   persist_topics: false
+
+# Server Linking (Phase 7)
+# Allows multiple IRC servers to connect together forming a network
+linking:
+  enabled: false  # Enable server linking
+  host: "0.0.0.0"
+  port: 7777      # Port for incoming server connections
+  server_id: "0AA" # Server ID (SID): 3 chars [0-9][A-Z0-9][A-Z0-9]
+  description: "IRC Server Hub"
+  password: "linkpass123"  # Password for incoming links
+  
+  # Configured links to other servers
+  links:
+    # Example hub server
+    # - name: "hub.example.net"
+    #   sid: "1BB"
+    #   host: "10.0.0.1"
+    #   port: 7777
+    #   password: "linkpass123"
+    #   auto_connect: true
+    #   is_hub: true
+    
+    # Example leaf server
+    # - name: "leaf.example.net"
+    #   sid: "2CC"
+    #   host: "10.0.0.2"
+    #   port: 7777
+    #   password: "linkpass456"
+    #   auto_connect: false
+    #   is_hub: false

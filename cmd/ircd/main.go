@@ -118,6 +118,23 @@ func loadConfig(path string) (*server.Config, error) {
 				KeyFile  string `yaml:"key_file"`
 			} `yaml:"tls"`
 		} `yaml:"websocket"`
+		Linking struct {
+			Enabled     bool   `yaml:"enabled"`
+			Host        string `yaml:"host"`
+			Port        int    `yaml:"port"`
+			ServerID    string `yaml:"server_id"`
+			Description string `yaml:"description"`
+			Password    string `yaml:"password"`
+			Links       []struct {
+				Name        string `yaml:"name"`
+				SID         string `yaml:"sid"`
+				Host        string `yaml:"host"`
+				Port        int    `yaml:"port"`
+				Password    string `yaml:"password"`
+				AutoConnect bool   `yaml:"auto_connect"`
+				IsHub       bool   `yaml:"is_hub"`
+			} `yaml:"links"`
+		} `yaml:"linking"`
 		Operators []struct {
 			Name     string `yaml:"name"`
 			Password string `yaml:"password"`
@@ -134,6 +151,20 @@ func loadConfig(path string) (*server.Config, error) {
 		operators[i] = server.Operator{
 			Name:     op.Name,
 			Password: op.Password,
+		}
+	}
+
+	// Build links list
+	links := make([]server.LinkConfig, len(configData.Linking.Links))
+	for i, link := range configData.Linking.Links {
+		links[i] = server.LinkConfig{
+			Name:        link.Name,
+			SID:         link.SID,
+			Host:        link.Host,
+			Port:        link.Port,
+			Password:    link.Password,
+			AutoConnect: link.AutoConnect,
+			IsHub:       link.IsHub,
 		}
 	}
 
@@ -157,6 +188,13 @@ func loadConfig(path string) (*server.Config, error) {
 		WebSocketTLS:     configData.WebSocket.TLS.Enabled,
 		WebSocketCert:    configData.WebSocket.TLS.CertFile,
 		WebSocketKey:     configData.WebSocket.TLS.KeyFile,
+		LinkingEnabled:   configData.Linking.Enabled,
+		LinkingHost:      configData.Linking.Host,
+		LinkingPort:      configData.Linking.Port,
+		ServerID:         configData.Linking.ServerID,
+		ServerDesc:       configData.Linking.Description,
+		LinkPassword:     configData.Linking.Password,
+		Links:            links,
 	}
 
 	// Set defaults for missing values
@@ -189,6 +227,12 @@ func loadConfig(path string) (*server.Config, error) {
 	}
 	if len(config.WebSocketOrigins) == 0 {
 		config.WebSocketOrigins = []string{"*"}
+	}
+	if config.LinkingPort == 0 {
+		config.LinkingPort = 7777
+	}
+	if config.LinkingHost == "" {
+		config.LinkingHost = "0.0.0.0"
 	}
 
 	return config, nil
