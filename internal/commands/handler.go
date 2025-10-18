@@ -48,6 +48,15 @@ type MessageRouter interface {
 	RouteChannelMessage(sourceNick, sourceUser, sourceHost, channel, message, msgType string) error
 	// IsUserLocal checks if a user is on the local server
 	IsUserLocal(nickname string) bool
+	
+	// PropagateJoin propagates a JOIN to remote servers (Phase 7.4.3)
+	PropagateJoin(nick, user, host, uid, channel string, ts int64) error
+	// PropagatePart propagates a PART to remote servers (Phase 7.4.3)
+	PropagatePart(nick, user, host, uid, channel, message string) error
+	// PropagateQuit propagates a QUIT to remote servers (Phase 7.4.3)
+	PropagateQuit(nick, user, host, uid, message string) error
+	// PropagateNick propagates a NICK change to remote servers (Phase 7.4.3)
+	PropagateNick(oldNick, newNick, user, host, uid string, ts int64) error
 }
 
 // CommandFunc is the signature for command handler functions
@@ -197,7 +206,36 @@ func (h *Handler) handleNick(c *client.Client, msg *parser.Message) error {
 		// Notify the client and all channels they're in
 		notification := fmt.Sprintf(":%s NICK :%s", oldNick, newNick)
 		c.Send(notification)
-		// TODO: Broadcast to channels in Phase 2
+		
+		// Broadcast to all channels
+		for _, channelName := range c.GetChannels() {
+			if ch := h.channels.GetChannel(channelName); ch != nil {
+				ch.Broadcast(notification, c)
+			}
+		}
+		
+		// Propagate NICK to remote servers (Phase 7.4.3)
+		if h.router != nil {
+			parts := strings.SplitN(c.GetHostmask(), "!", 2)
+			user := ""
+			host := ""
+			if len(parts) == 2 {
+				userhost := strings.SplitN(parts[1], "@", 2)
+				if len(userhost) == 2 {
+					user = userhost[0]
+					host = userhost[1]
+				}
+			}
+			
+			uid := c.GetUID()
+			if uid == "" {
+				uid = newNick
+			}
+			
+			if err := h.router.PropagateNick(oldNick, newNick, user, host, uid, time.Now().Unix()); err != nil {
+				h.logger.Debug("Failed to propagate NICK", "error", err)
+			}
+		}
 	}
 
 	// Check if client should be registered now
@@ -276,6 +314,29 @@ func (h *Handler) handleQuit(c *client.Client, msg *parser.Message) error {
 			}
 		}
 	}
+	
+	// Propagate QUIT to remote servers (Phase 7.4.3)
+	if h.router != nil && c.IsRegistered() {
+		parts := strings.SplitN(c.GetHostmask(), "!", 2)
+		user := ""
+		host := ""
+		if len(parts) == 2 {
+			userhost := strings.SplitN(parts[1], "@", 2)
+			if len(userhost) == 2 {
+				user = userhost[0]
+				host = userhost[1]
+			}
+		}
+		
+		uid := c.GetUID()
+		if uid == "" {
+			uid = c.GetNickname()
+		}
+		
+		if err := h.router.PropagateQuit(c.GetNickname(), user, host, uid, quitMsg); err != nil {
+			h.logger.Debug("Failed to propagate QUIT", "error", err)
+		}
+	}
 
 	// Send ERROR to client
 	c.Send(fmt.Sprintf("ERROR :Closing Link: %s (%s)", c.GetHostmask(), quitMsg))
@@ -347,6 +408,29 @@ func (h *Handler) handleJoin(c *client.Client, msg *parser.Message) error {
 
 		// Broadcast JOIN to other members
 		ch.Broadcast(joinMsg, c)
+		
+		// Propagate JOIN to remote servers (Phase 7.4.3)
+		if h.router != nil {
+			parts := strings.SplitN(c.GetHostmask(), "!", 2)
+			user := ""
+			host := ""
+			if len(parts) == 2 {
+				userhost := strings.SplitN(parts[1], "@", 2)
+				if len(userhost) == 2 {
+					user = userhost[0]
+					host = userhost[1]
+				}
+			}
+			
+			uid := c.GetUID()
+			if uid == "" {
+				uid = c.GetNickname() // Fallback if no UID
+			}
+			
+			if err := h.router.PropagateJoin(c.GetNickname(), user, host, uid, channelName, time.Now().Unix()); err != nil {
+				h.logger.Debug("Failed to propagate JOIN", "error", err, "channel", channelName)
+			}
+		}
 
 		// Send topic if it exists
 		topic := ch.GetTopic()
@@ -408,6 +492,29 @@ func (h *Handler) handlePart(c *client.Client, msg *parser.Message) error {
 		// Remove client from channel
 		ch.RemoveMember(c)
 		c.PartChannel(channelName)
+		
+		// Propagate PART to remote servers (Phase 7.4.3)
+		if h.router != nil {
+			parts := strings.SplitN(c.GetHostmask(), "!", 2)
+			user := ""
+			host := ""
+			if len(parts) == 2 {
+				userhost := strings.SplitN(parts[1], "@", 2)
+				if len(userhost) == 2 {
+					user = userhost[0]
+					host = userhost[1]
+				}
+			}
+			
+			uid := c.GetUID()
+			if uid == "" {
+				uid = c.GetNickname()
+			}
+			
+			if err := h.router.PropagatePart(c.GetNickname(), user, host, uid, channelName, partMsg); err != nil {
+				h.logger.Debug("Failed to propagate PART", "error", err, "channel", channelName)
+			}
+		}
 
 		// Remove empty channels
 		if ch.IsEmpty() {

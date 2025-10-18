@@ -691,3 +691,72 @@ func (s *Server) IsUserLocal(nickname string) bool {
 	_, exists := s.clients[nickname]
 	return exists
 }
+
+// PropagateJoin propagates a user JOIN to all linked servers
+func (s *Server) PropagateJoin(nick, user, host, uid, channel string, ts int64) error {
+	if s.network == nil {
+		return fmt.Errorf("network not initialized")
+	}
+	
+	msg := &linking.Message{
+		Source:  uid,
+		Command: "JOIN",
+		Params:  []string{channel, fmt.Sprintf("%d", ts)},
+	}
+	
+	// Broadcast to all linked servers except the source server
+	s.router.BroadcastToServers(msg, s.config.ServerID)
+	return nil
+}
+
+// PropagatePart propagates a user PART to all linked servers
+func (s *Server) PropagatePart(nick, user, host, uid, channel, message string) error {
+	if s.network == nil {
+		return fmt.Errorf("network not initialized")
+	}
+	
+	msg := &linking.Message{
+		Source:  uid,
+		Command: "PART",
+		Params:  []string{channel, message},
+	}
+	
+	// Broadcast to all linked servers except the source server
+	s.router.BroadcastToServers(msg, s.config.ServerID)
+	return nil
+}
+
+// PropagateQuit propagates a user QUIT to all linked servers
+func (s *Server) PropagateQuit(nick, user, host, uid, message string) error {
+	if s.network == nil {
+		return fmt.Errorf("network not initialized")
+	}
+	
+	msg := &linking.Message{
+		Source:  uid,
+		Command: "QUIT",
+		Params:  []string{message},
+	}
+	
+	// Broadcast to all linked servers except the source server
+	s.router.BroadcastToServers(msg, s.config.ServerID)
+	return nil
+}
+
+// PropagateNick propagates a nickname change to all linked servers
+func (s *Server) PropagateNick(oldNick, newNick, user, host, uid string, ts int64) error {
+	if s.network == nil {
+		return fmt.Errorf("network not initialized")
+	}
+	
+	msg := &linking.Message{
+		Source:  uid,
+		Command: "NICK",
+		Params:  []string{newNick, fmt.Sprintf("%d", ts)},
+	}
+	
+	// Broadcast to all linked servers except the source server
+	s.router.BroadcastToServers(msg, s.config.ServerID)
+	return nil
+}
+

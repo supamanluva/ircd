@@ -300,7 +300,18 @@ func (s *Server) handleLinkMessage(msg *linking.Message, fromServer *linking.Ser
 	case "PRIVMSG", "NOTICE":
 		return s.handleLinkPrivmsg(msg, fromServer)
 	
-	// TODO (Phase 7.4.3): Handle JOIN, PART, QUIT, NICK
+	case "JOIN":
+		return s.handleLinkJoin(msg, fromServer)
+	
+	case "PART":
+		return s.handleLinkPart(msg, fromServer)
+	
+	case "QUIT":
+		return s.handleLinkQuit(msg, fromServer)
+	
+	case "NICK":
+		return s.handleLinkNick(msg, fromServer)
+	
 	// TODO (Phase 7.4.4): Handle MODE, TOPIC, KICK, INVITE
 	
 	default:
@@ -389,3 +400,165 @@ func (s *Server) handleLinkPrivmsg(msg *linking.Message, fromServer *linking.Ser
 	
 	return nil
 }
+
+// handleLinkJoin handles JOIN from remote servers (Phase 7.4.3)
+func (s *Server) handleLinkJoin(msg *linking.Message, fromServer *linking.Server) error {
+	if len(msg.Params) < 1 {
+		return fmt.Errorf("invalid JOIN: need at least 1 param")
+	}
+	
+	channel := msg.Params[0]
+	sourceUID := msg.Source
+	
+	// Get source user info
+	sourceUser, ok := s.network.GetUserByUID(sourceUID)
+	if !ok {
+		s.logger.Debug("Unknown user JOINing", "uid", sourceUID, "channel", channel)
+		return fmt.Errorf("unknown user %s", sourceUID)
+	}
+	
+	// Check if we have local members in this channel
+	s.mu.RLock()
+	ch, exists := s.channels[channel]
+	s.mu.RUnlock()
+	
+	if !exists {
+		// No local users in this channel, nothing to do
+		s.logger.Debug("Remote JOIN to channel with no local users",
+			"user", sourceUser.Nick, "channel", channel)
+		return nil
+	}
+	
+	// Broadcast JOIN to all local members
+	joinMsg := fmt.Sprintf(":%s!%s@%s JOIN %s",
+		sourceUser.Nick, sourceUser.User, sourceUser.Host, channel)
+	ch.Broadcast(joinMsg, nil)
+	
+	s.logger.Debug("Delivered remote JOIN",
+		"user", sourceUser.Nick, "channel", channel)
+	
+	return nil
+}
+
+// handleLinkPart handles PART from remote servers (Phase 7.4.3)
+func (s *Server) handleLinkPart(msg *linking.Message, fromServer *linking.Server) error {
+	if len(msg.Params) < 1 {
+		return fmt.Errorf("invalid PART: need at least 1 param")
+	}
+	
+	channel := msg.Params[0]
+	partMsg := ""
+	if len(msg.Params) > 1 {
+		partMsg = msg.Params[1]
+	}
+	sourceUID := msg.Source
+	
+	// Get source user info
+	sourceUser, ok := s.network.GetUserByUID(sourceUID)
+	if !ok {
+		s.logger.Debug("Unknown user PARTing", "uid", sourceUID, "channel", channel)
+		return fmt.Errorf("unknown user %s", sourceUID)
+	}
+	
+	// Check if we have local members in this channel
+	s.mu.RLock()
+	ch, exists := s.channels[channel]
+	s.mu.RUnlock()
+	
+	if !exists {
+		// No local users in this channel, nothing to do
+		s.logger.Debug("Remote PART from channel with no local users",
+			"user", sourceUser.Nick, "channel", channel)
+		return nil
+	}
+	
+	// Broadcast PART to all local members
+	var partNotice string
+	if partMsg != "" {
+		partNotice = fmt.Sprintf(":%s!%s@%s PART %s :%s",
+			sourceUser.Nick, sourceUser.User, sourceUser.Host, channel, partMsg)
+	} else {
+		partNotice = fmt.Sprintf(":%s!%s@%s PART %s",
+			sourceUser.Nick, sourceUser.User, sourceUser.Host, channel)
+	}
+	ch.BroadcastAll(partNotice)
+	
+	s.logger.Debug("Delivered remote PART",
+		"user", sourceUser.Nick, "channel", channel)
+	
+	return nil
+}
+
+// handleLinkQuit handles QUIT from remote servers (Phase 7.4.3)
+func (s *Server) handleLinkQuit(msg *linking.Message, fromServer *linking.Server) error {
+	quitMsg := ""
+	if len(msg.Params) > 0 {
+		quitMsg = msg.Params[0]
+	}
+	sourceUID := msg.Source
+	
+	// Get source user info
+	sourceUser, ok := s.network.GetUserByUID(sourceUID)
+	if !ok {
+		s.logger.Debug("Unknown user QUITing", "uid", sourceUID)
+		return fmt.Errorf("unknown user %s", sourceUID)
+	}
+	
+	// Broadcast QUIT to all local channels that have this remote user
+	quitNotice := fmt.Sprintf(":%s!%s@%s QUIT :%s",
+		sourceUser.Nick, sourceUser.User, sourceUser.Host, quitMsg)
+	
+	// Find all channels with local members and broadcast
+	s.mu.RLock()
+	for _, ch := range s.channels {
+		if ch.GetMemberCount() > 0 {
+			// Broadcast to local members
+			ch.BroadcastAll(quitNotice)
+		}
+	}
+	s.mu.RUnlock()
+	
+	s.logger.Debug("Delivered remote QUIT",
+		"user", sourceUser.Nick, "message", quitMsg)
+	
+	return nil
+}
+
+// handleLinkNick handles NICK changes from remote servers (Phase 7.4.3)
+func (s *Server) handleLinkNick(msg *linking.Message, fromServer *linking.Server) error {
+	if len(msg.Params) < 1 {
+		return fmt.Errorf("invalid NICK: need at least 1 param")
+	}
+	
+	newNick := msg.Params[0]
+	sourceUID := msg.Source
+	
+	// Get source user info (with old nickname)
+	sourceUser, ok := s.network.GetUserByUID(sourceUID)
+	if !ok {
+		s.logger.Debug("Unknown user changing NICK", "uid", sourceUID)
+		return fmt.Errorf("unknown user %s", sourceUID)
+	}
+	
+	oldNick := sourceUser.Nick
+	
+	// Broadcast NICK change to all local channels that have this remote user
+	nickNotice := fmt.Sprintf(":%s!%s@%s NICK :%s",
+		oldNick, sourceUser.User, sourceUser.Host, newNick)
+	
+	// Find all channels with local members and broadcast
+	s.mu.RLock()
+	for _, ch := range s.channels {
+		if ch.GetMemberCount() > 0 {
+			// Broadcast to local members
+			ch.BroadcastAll(nickNotice)
+		}
+	}
+	s.mu.RUnlock()
+	
+	s.logger.Debug("Delivered remote NICK",
+		"old", oldNick, "new", newNick)
+	
+	return nil
+}
+
