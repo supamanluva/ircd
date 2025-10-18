@@ -9,6 +9,7 @@ import (
 
 	"github.com/supamanluva/ircd/internal/channel"
 	"github.com/supamanluva/ircd/internal/client"
+	"github.com/supamanluva/ircd/internal/linking"
 	"github.com/supamanluva/ircd/internal/logger"
 	"github.com/supamanluva/ircd/internal/parser"
 )
@@ -66,6 +67,14 @@ type MessageRouter interface {
 	PropagateKick(nick, user, host, uid, channel, target, reason string) error
 	// PropagateInvite propagates an INVITE to remote servers (Phase 7.4.4)
 	PropagateInvite(nick, user, host, uid, target, channel string) error
+	
+	// PropagateUser propagates a new user registration to remote servers
+	PropagateUser(nick, user, host, uid, realname string, ts int64) error
+	
+	// GetRemoteChannel gets a remote channel by name (for NAMES list)
+	GetRemoteChannel(name string) (*linking.RemoteChannel, bool)
+	// GetRemoteUserByUID gets a remote user by UID (for NAMES list)
+	GetRemoteUserByUID(uid string) (*linking.RemoteUser, bool)
 	
 	// DisconnectServer disconnects a linked server (Phase 7.4.5)
 	DisconnectServer(serverName, reason string) error
@@ -254,6 +263,16 @@ func (h *Handler) handleNick(c *client.Client, msg *parser.Message) error {
 
 	// Check if client should be registered now
 	h.tryRegister(c)
+	
+	// If client just became registered, add them to the registry (for UID assignment and propagation)
+	if c.IsRegistered() && oldNick == "" {
+		h.logger.Info("Attempting to add newly registered client", "nick", newNick, "isRegistered", c.IsRegistered(), "oldNick", oldNick)
+		if err := h.clients.AddClient(c); err != nil {
+			h.logger.Warn("Failed to add client to registry", "error", err, "nick", newNick)
+		} else {
+			h.logger.Info("Successfully added client to registry", "nick", newNick)
+		}
+	}
 
 	return nil
 }
@@ -278,7 +297,18 @@ func (h *Handler) handleUser(c *client.Client, msg *parser.Message) error {
 	c.SetUsername(username, realname)
 
 	// Check if client should be registered now
+	wasRegistered := c.IsRegistered()
 	h.tryRegister(c)
+	
+	// If client just became registered, add them to the registry (for UID assignment and propagation)
+	if !wasRegistered && c.IsRegistered() {
+		h.logger.Info("Attempting to add newly registered client from USER", "nick", c.GetNickname(), "user", username)
+		if err := h.clients.AddClient(c); err != nil {
+			h.logger.Warn("Failed to add client to registry", "error", err, "nick", c.GetNickname())
+		} else {
+			h.logger.Info("Successfully added client to registry from USER", "nick", c.GetNickname())
+		}
+	}
 
 	return nil
 }
@@ -781,6 +811,32 @@ func (h *Handler) handleTopic(c *client.Client, msg *parser.Message) error {
 // sendNamesList sends the NAMES list for a channel
 func (h *Handler) sendNamesList(c *client.Client, ch *channel.Channel) {
 	nicks := ch.GetMemberNicks()
+	
+	// Add remote users from network state if we have a router (server linking enabled)
+	if h.router != nil {
+		channelName := ch.GetName()
+		if remoteChan, exists := h.router.GetRemoteChannel(channelName); exists {
+			// Add remote users who are in this channel
+			for uid := range remoteChan.Members {
+				if remoteUser, ok := h.router.GetRemoteUserByUID(uid); ok {
+					// Don't duplicate local users
+					isLocal := false
+					for _, localNick := range nicks {
+						cleanNick := strings.TrimPrefix(strings.TrimPrefix(localNick, "@"), "+")
+						if cleanNick == remoteUser.Nick {
+							isLocal = true
+							break
+						}
+					}
+					if !isLocal {
+						// Add remote user (no prefix since we don't track their op status locally)
+						nicks = append(nicks, remoteUser.Nick)
+					}
+				}
+			}
+		}
+	}
+	
 	nickList := strings.Join(nicks, " ")
 
 	// Split into chunks if necessary (RFC says max 512 bytes per message)
@@ -806,6 +862,8 @@ func (h *Handler) tryRegister(c *client.Client) {
 
 	// Send welcome messages
 	h.sendWelcome(c)
+	
+	// Note: User propagation is handled in AddClient() where UID is assigned
 }
 
 // isValidNickname checks if a nickname is valid according to RFC 2812

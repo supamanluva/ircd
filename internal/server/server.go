@@ -111,6 +111,22 @@ func (s *Server) AddClient(c *client.Client) error {
 		uid := s.network.GenerateUID()
 		c.SetUID(uid)
 		s.logger.Info("Assigned UID to client", "nick", nick, "uid", uid)
+		
+		// Propagate new user to other servers (Phase 7.4.6 fix)
+		if s.router != nil {
+			if err := s.PropagateUser(
+				c.GetNickname(),
+				c.GetUsername(),
+				c.GetHostname(),
+				c.GetUID(),
+				c.GetRealname(),
+				time.Now().Unix(),
+			); err != nil {
+				s.logger.Debug("Failed to propagate new user", "error", err, "nick", c.GetNickname())
+			} else {
+				s.logger.Info("Propagated new user to network", "nick", c.GetNickname(), "uid", c.GetUID())
+			}
+		}
 	}
 	
 	s.clients[nick] = c
@@ -826,6 +842,48 @@ func (s *Server) PropagateInvite(nick, user, host, uid, target, channel string) 
 	// Broadcast to all linked servers except the source server
 	s.router.BroadcastToServers(msg, s.config.ServerID)
 	return nil
+}
+
+// PropagateUser propagates a new user registration to all linked servers
+func (s *Server) PropagateUser(nick, user, host, uid, realname string, ts int64) error {
+	if s.network == nil {
+		return fmt.Errorf("network not initialized")
+	}
+	
+	// Send UID message to introduce this user to the network
+	msg := &linking.Message{
+		Command: "UID",
+		Params: []string{
+			nick,
+			"1",                     // hopcount
+			fmt.Sprintf("%d", ts),   // timestamp
+			user,
+			host,
+			uid,
+			realname,
+		},
+	}
+	
+	// Broadcast to all linked servers
+	s.router.BroadcastToServers(msg, s.config.ServerID)
+	s.logger.Debug("Propagated new user to network", "nick", nick, "uid", uid)
+	return nil
+}
+
+// GetRemoteChannel gets a remote channel by name (for NAMES list)
+func (s *Server) GetRemoteChannel(name string) (*linking.RemoteChannel, bool) {
+	if s.network == nil {
+		return nil, false
+	}
+	return s.network.GetChannel(name)
+}
+
+// GetRemoteUserByUID gets a remote user by UID (for NAMES list)
+func (s *Server) GetRemoteUserByUID(uid string) (*linking.RemoteUser, bool) {
+	if s.network == nil {
+		return nil, false
+	}
+	return s.network.GetUserByUID(uid)
 }
 
 // DisconnectServer disconnects a linked server (Phase 7.4.5)

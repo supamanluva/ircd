@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net"
+	"time"
 	
 	"github.com/supamanluva/ircd/internal/linking"
 )
@@ -306,6 +307,9 @@ func (s *Server) AutoConnect() {
 // handleLinkMessage processes incoming messages from linked servers (Phase 7.4)
 func (s *Server) handleLinkMessage(msg *linking.Message, fromServer *linking.Server) error {
 	switch msg.Command {
+	case "UID":
+		return s.handleLinkUID(msg, fromServer)
+	
 	case "PRIVMSG", "NOTICE":
 		return s.handleLinkPrivmsg(msg, fromServer)
 	
@@ -339,6 +343,41 @@ func (s *Server) handleLinkMessage(msg *linking.Message, fromServer *linking.Ser
 	default:
 		s.logger.Debug("Unhandled link message", "command", msg.Command, "from", fromServer.Name)
 	}
+	
+	return nil
+}
+
+// handleLinkUID handles UID messages from remote servers (new user registration)
+func (s *Server) handleLinkUID(msg *linking.Message, fromServer *linking.Server) error {
+	// UID format: UID nick hopcount timestamp user host uid realname
+	if len(msg.Params) < 7 {
+		return fmt.Errorf("invalid UID: need 7 params")
+	}
+	
+	nick := msg.Params[0]
+	// hopcount := msg.Params[1]  // not used
+	// ts := msg.Params[2]        // not used  
+	user := msg.Params[3]
+	host := msg.Params[4]
+	uid := msg.Params[5]
+	realname := msg.Params[6]
+	
+	// Add remote user to network
+	remoteUser := &linking.RemoteUser{
+		UID:      uid,
+		Nick:     nick,
+		User:     user,
+		Host:     host,
+		RealName: realname,
+		Server:   fromServer,
+		Channels: make(map[string]bool),  // Initialize channels map
+	}
+	
+	s.network.AddUser(remoteUser)
+	s.logger.Info("Remote user registered", 
+		"nick", nick, 
+		"uid", uid, 
+		"from_server", fromServer.Name)
 	
 	return nil
 }
@@ -439,25 +478,46 @@ func (s *Server) handleLinkJoin(msg *linking.Message, fromServer *linking.Server
 		return fmt.Errorf("unknown user %s", sourceUID)
 	}
 	
+	// Update network state: add user to channel
+	// Note: user.Channels is protected by Network.mu in other operations
+	sourceUser.Channels[channel] = true
+	
+	// Add user to RemoteChannel if it exists, or create it
+	remoteChan, exists := s.network.GetChannel(channel)
+	if !exists {
+		// Create remote channel
+		remoteChan = &linking.RemoteChannel{
+			Name:    channel,
+			TS:      time.Now().Unix(),
+			Members: make(map[string]string),
+		}
+		s.network.AddChannel(remoteChan)
+		// Get it again since AddChannel might have modified it
+		remoteChan, exists = s.network.GetChannel(channel)
+		if !exists {
+			return fmt.Errorf("failed to create channel")
+		}
+	}
+	// Note: remoteChan.Members is protected by Network.mu in AddChannel
+	remoteChan.Members[sourceUID] = "" // No modes yet
+	
 	// Check if we have local members in this channel
 	s.mu.RLock()
-	ch, exists := s.channels[channel]
+	ch, localExists := s.channels[channel]
 	s.mu.RUnlock()
 	
-	if !exists {
-		// No local users in this channel, nothing to do
-		s.logger.Debug("Remote JOIN to channel with no local users",
+	if localExists {
+		// Broadcast JOIN to all local members
+		joinMsg := fmt.Sprintf(":%s!%s@%s JOIN %s",
+			sourceUser.Nick, sourceUser.User, sourceUser.Host, channel)
+		ch.Broadcast(joinMsg, nil)
+		
+		s.logger.Debug("Delivered remote JOIN to local users",
 			"user", sourceUser.Nick, "channel", channel)
-		return nil
+	} else {
+		s.logger.Debug("Remote JOIN tracked in network state",
+			"user", sourceUser.Nick, "channel", channel)
 	}
-	
-	// Broadcast JOIN to all local members
-	joinMsg := fmt.Sprintf(":%s!%s@%s JOIN %s",
-		sourceUser.Nick, sourceUser.User, sourceUser.Host, channel)
-	ch.Broadcast(joinMsg, nil)
-	
-	s.logger.Debug("Delivered remote JOIN",
-		"user", sourceUser.Nick, "channel", channel)
 	
 	return nil
 }
@@ -482,14 +542,20 @@ func (s *Server) handleLinkPart(msg *linking.Message, fromServer *linking.Server
 		return fmt.Errorf("unknown user %s", sourceUID)
 	}
 	
+	// Update network state: remove user from channel
+	delete(sourceUser.Channels, channel)
+	if remoteChan, exists := s.network.GetChannel(channel); exists {
+		delete(remoteChan.Members, sourceUID)
+	}
+	
 	// Check if we have local members in this channel
 	s.mu.RLock()
 	ch, exists := s.channels[channel]
 	s.mu.RUnlock()
 	
 	if !exists {
-		// No local users in this channel, nothing to do
-		s.logger.Debug("Remote PART from channel with no local users",
+		// No local users in this channel, but we updated network state
+		s.logger.Debug("Remote PART tracked in network state",
 			"user", sourceUser.Nick, "channel", channel)
 		return nil
 	}
@@ -540,8 +606,11 @@ func (s *Server) handleLinkQuit(msg *linking.Message, fromServer *linking.Server
 	}
 	s.mu.RUnlock()
 	
-	s.logger.Debug("Delivered remote QUIT",
-		"user", sourceUser.Nick, "message", quitMsg)
+	// Remove user from network state
+	s.network.RemoveUser(sourceUID)
+	
+	s.logger.Debug("Delivered remote QUIT and removed user",
+		"user", sourceUser.Nick, "uid", sourceUID, "message", quitMsg)
 	
 	return nil
 }
