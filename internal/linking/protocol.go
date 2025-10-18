@@ -94,8 +94,8 @@ func (m *Message) String() string {
 	
 	for i, param := range m.Params {
 		sb.WriteString(" ")
-		// Last param with space needs : prefix
-		if i == len(m.Params)-1 && strings.Contains(param, " ") {
+		// Last param with space needs : prefix, or always for UID command
+		if i == len(m.Params)-1 && (strings.Contains(param, " ") || m.Command == "UID") {
 			sb.WriteString(":")
 		}
 		sb.WriteString(param)
@@ -226,7 +226,7 @@ func ParseSVINFO(msg *Message) (tsVersion, minVersion int, serverTime int64, err
 
 // BuildUID creates a UID message to introduce a user
 // Format: :<SID> UID <nick> <hopcount> <ts> <modes> <user> <host> <ip> <uid> :<realname>
-func BuildUID(sid, nick, user, host, ip, uid, modes, realname string, timestamp int64) *Message {
+func BuildUID(sid, nick, modes, user, host, ip, uid, realname string, timestamp int64) *Message {
 	return &Message{
 		Source:  sid,
 		Command: "UID",

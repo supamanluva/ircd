@@ -244,6 +244,11 @@ func (c *Client) UpdatePingTime() {
 func (c *Client) IsIdle(timeout time.Duration) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	// For WebSocket clients, check both lastActivity and lastPing
+	if c.connType == WebSocket {
+		idle := time.Since(c.lastActivity) > timeout && time.Since(c.lastPing) > timeout
+		return idle
+	}
 	return time.Since(c.lastActivity) > timeout
 }
 

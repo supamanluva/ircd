@@ -637,12 +637,14 @@ func (s *Server) RoutePrivmsg(sourceNick, sourceUser, sourceHost, targetNick, me
 		return fmt.Errorf("user %s not found in network", targetNick)
 	}
 	
-	// Build PRIVMSG message
+	// Build PRIVMSG message with sender information
 	// Format: :<source> PRIVMSG <target> :<message>
+	// But we need to include sender info since source is server SID
+	senderInfo := fmt.Sprintf("%s!%s@%s", sourceNick, sourceUser, sourceHost)
 	msg := &linking.Message{
-		Source:  s.network.LocalSID,
+		Source:  senderInfo,  // Include full sender info as source
 		Command: "PRIVMSG",
-		Params:  []string{remoteUser.UID, message},
+		Params:  []string{targetNick, message},
 	}
 	
 	return s.router.RouteToUser(s.network.LocalSID, remoteUser.UID, msg)

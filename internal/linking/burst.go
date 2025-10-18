@@ -34,12 +34,12 @@ func (l *Link) SendBurst(network *Network, localClients map[string]interface{}, 
 		msg := BuildUID(
 			network.LocalSID,
 			nick,
+			"+i",
 			"user",
 			"localhost",
 			"127.0.0.1",
 			uid,
-			"+i",
-			"User",
+			"Real User", // Ensure trailing param
 			1729268400, // Placeholder timestamp
 		)
 		
@@ -198,14 +198,20 @@ func (l *Link) SendBurstFromClients(network *Network, getClients func() []BurstC
 			uid = network.GenerateUID()
 		}
 		
+		// Ensure modes is not empty, default to +i if none set
+		modes := client.Modes
+		if modes == "" {
+			modes = "+i"
+		}
+		
 		msg := BuildUID(
 			network.LocalSID,
 			client.Nick,
+			modes,
 			client.User,
 			client.Host,
 			client.IP,
 			uid,
-			client.Modes,
 			client.RealName,
 			client.Timestamp,
 		)

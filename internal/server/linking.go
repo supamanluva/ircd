@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net"
+	"strings"
 	"time"
 	
 	"github.com/supamanluva/ircd/internal/linking"
@@ -292,16 +293,47 @@ func (s *Server) AutoConnect() {
 		return
 	}
 	
-	for _, link := range s.config.Links {
-		if link.AutoConnect {
-			s.logger.Info("Auto-connecting to", "name", link.Name)
-			go func(l LinkConfig) {
-				if err := s.ConnectToServer(l); err != nil {
-					s.logger.Error("Failed to auto-connect", "name", l.Name, "error", err)
-				}
-			}(link)
-		}
-	}
+	   for _, link := range s.config.Links {
+		   if link.AutoConnect {
+			   s.logger.Info("Auto-connecting to", "name", link.Name)
+			   go func(l LinkConfig) {
+				   backoff := 5 * time.Second
+				   for {
+					   err := s.ConnectToServer(l)
+					   if err != nil {
+						   s.logger.Error("Failed to connect, will retry", "name", l.Name, "error", err)
+						   time.Sleep(backoff)
+						   // Exponential backoff up to 5min
+						   if backoff < 5*time.Minute {
+							   backoff *= 2
+							   if backoff > 5*time.Minute {
+								   backoff = 5 * time.Minute
+							   }
+						   }
+					   } else {
+						   // Reset backoff after successful connect
+						   backoff = 5 * time.Second
+					   }
+					   // Wait for disconnect before retrying
+					   // Check if still in network, if not, retry
+					   for {
+						   time.Sleep(10 * time.Second)
+						   sids := s.network.GetServerSIDs()
+						   found := false
+						   for _, sid := range sids {
+							   if sid == l.SID {
+								   found = true
+								   break
+							   }
+						   }
+						   if !found {
+							   break // Not connected, retry
+						   }
+					   }
+				   }
+			   }(link)
+		   }
+	   }
 }
 
 // handleLinkMessage processes incoming messages from linked servers (Phase 7.4)
@@ -391,15 +423,40 @@ func (s *Server) handleLinkPrivmsg(msg *linking.Message, fromServer *linking.Ser
 	target := msg.Params[0]
 	message := msg.Params[1]
 	
-	// Get source user info
+	// Parse source user info - could be UID or "nick!user@host" format
 	sourceUID := msg.Source
-	sourceUser, ok := s.network.GetUserByUID(sourceUID)
-	if !ok {
-		// Source might be a server SID, try to construct something reasonable
-		s.logger.Debug("Unknown source user", "uid", sourceUID)
-		sourceUser = &linking.RemoteUser{
+	var sourceNick, sourceUser, sourceHost string
+	var sourceUserObj *linking.RemoteUser
+	
+	if strings.Contains(sourceUID, "!") && strings.Contains(sourceUID, "@") {
+		// Source is in "nick!user@host" format
+		parts := strings.Split(sourceUID, "!")
+		sourceNick = parts[0]
+		if len(parts) > 1 {
+			userHost := strings.Split(parts[1], "@")
+			sourceUser = userHost[0]
+			if len(userHost) > 1 {
+				sourceHost = userHost[1]
+			}
+		}
+		// Create a temporary RemoteUser object
+		sourceUserObj = &linking.RemoteUser{
 			UID:  sourceUID,
-			Nick: sourceUID,
+			Nick: sourceNick,
+			User: sourceUser,
+			Host: sourceHost,
+		}
+	} else {
+		// Source is UID, look up user info
+		var ok bool
+		sourceUserObj, ok = s.network.GetUserByUID(sourceUID)
+		if !ok {
+			// Source might be a server SID, try to construct something reasonable
+			s.logger.Debug("Unknown source user", "uid", sourceUID)
+			sourceUserObj = &linking.RemoteUser{
+				UID:  sourceUID,
+				Nick: sourceUID,
+			}
 		}
 	}
 	
@@ -417,14 +474,14 @@ func (s *Server) handleLinkPrivmsg(msg *linking.Message, fromServer *linking.Ser
 		
 		// Format message and broadcast to local channel members
 		msgText := fmt.Sprintf(":%s!%s@%s %s %s :%s",
-			sourceUser.Nick, sourceUser.User, sourceUser.Host,
+			sourceUserObj.Nick, sourceUserObj.User, sourceUserObj.Host,
 			msg.Command, target, message)
 		
 		// Broadcast to all local members
 		ch.Broadcast(msgText, nil)
 		
 		s.logger.Debug("Delivered channel message from remote",
-			"from", sourceUser.Nick, "channel", target)
+			"from", sourceUserObj.Nick, "channel", target)
 		
 		return nil
 	}
@@ -451,13 +508,13 @@ func (s *Server) handleLinkPrivmsg(msg *linking.Message, fromServer *linking.Ser
 	
 	// Format and deliver message
 	msgText := fmt.Sprintf(":%s!%s@%s %s %s :%s",
-		sourceUser.Nick, sourceUser.User, sourceUser.Host,
+		sourceUserObj.Nick, sourceUserObj.User, sourceUserObj.Host,
 		msg.Command, targetClient.GetNickname(), message)
 	
 	targetClient.Send(msgText)
 	
 	s.logger.Debug("Delivered private message from remote",
-		"from", sourceUser.Nick, "to", targetClient.GetNickname())
+		"from", sourceUserObj.Nick, "to", targetClient.GetNickname())
 	
 	return nil
 }

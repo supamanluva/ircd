@@ -418,3 +418,14 @@ func ValidateUID(uid string) bool {
 	
 	return true
 }
+
+// GetServerSIDs returns a slice of all connected server SIDs
+func (n *Network) GetServerSIDs() []string {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	sids := make([]string, 0, len(n.Servers))
+	for sid := range n.Servers {
+		sids = append(sids, sid)
+	}
+	return sids
+}

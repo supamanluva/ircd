@@ -66,14 +66,14 @@ linking:
   port: 7778                             # YOUR link port (must be different from hub!)
   server_id: "1BB"                       # Unique 3-char ID (DIFFERENT from hub's "0AA"!)
   description: "Example IRC Leaf Server"
-  password: "ChangeThisLinkPassword!"                # Must MATCH hub's password!
+  password: "flmrqfmrlfmeflrflrnrnelnrfl"                # Must MATCH hub's password!
   
   links:
     # Configure the HUB server connection here
     - name: "hub.example.net"              # Hub's server.name (MUST MATCH EXACTLY!)
       sid: "0AA"                          # Hub's server_id (matches your hub!)
-      host: "192.0.2.1"               # Hub's public IP or domain
+      host: "127.0.0.1"               # Hub's public IP or domain
       port: 7777                          # Hub's linking port
-      password: "ChangeThisLinkPassword!"             # Hub's linking password (matches!)
+      password: "flmrqfmrlfmeflrflrnrnelnrfl"             # Hub's linking password (matches!)
       auto_connect: true                  # Automatically connect on startup
       is_hub: true                        # This is a hub server (keep as true)

@@ -1,8 +1,8 @@
 # IRC Server Configuration - Server A (Hub)
 
 server:
-  name: "hub.example.net"
-  host: "0.0.0.0"
+  name: "VNSnet"
+  host: "irc.vnsnet.se"
   port: 6667
   tls:
     enabled: true
@@ -17,7 +17,7 @@ server:
 # WebSocket support
 websocket:
   enabled: true
-  host: "95.141.241.66"
+  host: "0.0.0.0"
   port: 8080
   allowed_origins:
     - "*"
@@ -61,11 +61,11 @@ channels:
 #
 linking:
   enabled: true
-  host: "0.0.0.0"                       # Listen on all interfaces for server links
+  host: "irc.vnsnet.se"                       # Listen on all interfaces for server links
   port: 7777                             # Port for server-to-server connections
   server_id: "0AA"                       # Unique 3-char ID for this server
-  description: "Example IRC Hub Server"
-  password: "ChangeThisLinkPassword!"                # CHANGE THIS! Share securely with leaf admins
+  description: "VNSnet IRC Hub Server"
+  password: "flmrqfmrlfmeflrflrnrnelnrfl"                # CHANGE THIS! Share securely with leaf admins
   
   links:
     # No links needed for hub - just wait for leafs to connect
