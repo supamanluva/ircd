@@ -3,6 +3,8 @@ package server
 import (
 	"fmt"
 	"net"
+	
+	"github.com/supamanluva/ircd/internal/linking"
 )
 
 // StartLinkListener starts listening for incoming server links
@@ -19,7 +21,7 @@ func (s *Server) StartLinkListener() error {
 	}
 	
 	s.linkListener = listener
-	s.logger.Info("Server link listener started on %s", addr)
+	s.logger.Info("Server link listener started on", "address", addr)
 	
 	// Accept connections in a goroutine
 	go s.acceptLinks()
@@ -36,12 +38,12 @@ func (s *Server) acceptLinks() {
 			case <-s.shutdown:
 				return
 			default:
-				s.logger.Error("Error accepting link connection: %v", err)
+				s.logger.Error("Error accepting link connection", "error", err)
 				continue
 			}
 		}
 		
-		s.logger.Info("Incoming link connection from %s", conn.RemoteAddr())
+		s.logger.Info("Incoming link connection from", "address", conn.RemoteAddr().String())
 		
 		// Handle link connection in a goroutine
 		go s.handleLinkConnection(conn)
@@ -52,18 +54,43 @@ func (s *Server) acceptLinks() {
 func (s *Server) handleLinkConnection(conn net.Conn) {
 	defer conn.Close()
 	
-	s.logger.Info("Link connection handler started for %s", conn.RemoteAddr())
+	s.logger.Info("Link connection handler started for", "address", conn.RemoteAddr().String())
 	
-	// TODO: Implement server handshake protocol
-	// 1. Receive PASS command with SID and password
-	// 2. Receive CAPAB for capabilities
-	// 3. Receive SERVER with server name and description
-	// 4. Send our PASS, CAPAB, SERVER
-	// 5. Exchange SVINFO
-	// 6. Perform burst (send all our users/channels)
-	// 7. Begin normal operation
+	// Create link
+	link := linking.NewLink(conn)
 	
-	s.logger.Info("Link connection closed for %s (handshake not yet implemented)", conn.RemoteAddr())
+	// Perform handshake (server side - receiving connection)
+	err := link.HandshakeServer(s.network, s.config.LinkPassword)
+	if err != nil {
+		s.logger.Error("Handshake failed from", "address", conn.RemoteAddr().String(), "error", err)
+		return
+	}
+	
+	// Get the registered server
+	server := link.GetServer()
+	if server == nil {
+		s.logger.Error("No server object after handshake from", "address", conn.RemoteAddr().String())
+		return
+	}
+	
+	s.logger.Info("Server link established", "name", server.Name, "sid", server.SID, "address", conn.RemoteAddr().String())
+	
+	// Add server to network
+	if err := s.network.AddServer(server); err != nil {
+		s.logger.Error("Failed to add server to network", "name", server.Name, "error", err)
+		return
+	}
+	
+	s.logger.Info("Server registered in network", "name", server.Name, "total_servers", s.network.GetServerCount())
+	
+	// TODO: Burst mode (Phase 7.3)
+	// 1. Receive burst from remote (UID, SJOIN commands)
+	// 2. Send our burst
+	
+	// TODO: Begin normal operation (Phase 7.4)
+	// Handle ongoing protocol messages
+	
+	s.logger.Info("Link connection closed for", "address", conn.RemoteAddr().String())
 }
 
 // ConnectToServer initiates an outbound connection to another server
@@ -73,28 +100,51 @@ func (s *Server) ConnectToServer(linkCfg LinkConfig) error {
 	}
 	
 	addr := fmt.Sprintf("%s:%d", linkCfg.Host, linkCfg.Port)
-	s.logger.Info("Attempting to connect to server %s (%s) at %s", 
-		linkCfg.Name, linkCfg.SID, addr)
+	s.logger.Info("Attempting to connect to server", "name", linkCfg.Name, "sid", linkCfg.SID, "address", addr)
 	
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s: %v", addr, err)
 	}
 	
-	s.logger.Info("Connected to %s, starting handshake", addr)
+	s.logger.Info("Connected, starting handshake", "address", addr)
 	
-	// TODO: Implement client side of handshake
-	// 1. Send PASS with our SID and password
-	// 2. Send CAPAB for our capabilities
-	// 3. Send SERVER with our name and description
-	// 4. Receive their PASS, CAPAB, SERVER
-	// 5. Exchange SVINFO
-	// 6. Receive burst (their users/channels)
-	// 7. Send our burst
-	// 8. Begin normal operation
+	// Create link
+	link := linking.NewLink(conn)
 	
-	conn.Close()
-	s.logger.Info("Link to %s established (handshake not yet implemented)", linkCfg.Name)
+	// Perform handshake (client side - initiating connection)
+	err = link.HandshakeClient(s.network, linkCfg.Password, linkCfg.SID, linkCfg.Name)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("handshake failed with %s: %v", linkCfg.Name, err)
+	}
+	
+	// Get the registered server
+	server := link.GetServer()
+	if server == nil {
+		conn.Close()
+		return fmt.Errorf("no server object after handshake with %s", linkCfg.Name)
+	}
+	
+	// Mark as hub if configured
+	server.IsHub = linkCfg.IsHub
+	
+	s.logger.Info("Server link established", "name", server.Name, "sid", server.SID)
+	
+	// Add server to network
+	if err := s.network.AddServer(server); err != nil {
+		conn.Close()
+		return fmt.Errorf("failed to add server %s to network: %v", server.Name, err)
+	}
+	
+	s.logger.Info("Server registered in network", "name", server.Name, "total_servers", s.network.GetServerCount())
+	
+	// TODO: Burst mode (Phase 7.3)
+	// 1. Send our burst (UID, SJOIN commands)
+	// 2. Receive their burst
+	
+	// TODO: Begin normal operation (Phase 7.4)
+	// Handle ongoing protocol messages in a goroutine
 	
 	return nil
 }
@@ -107,10 +157,10 @@ func (s *Server) AutoConnect() {
 	
 	for _, link := range s.config.Links {
 		if link.AutoConnect {
-			s.logger.Info("Auto-connecting to %s", link.Name)
+			s.logger.Info("Auto-connecting to", "name", link.Name)
 			go func(l LinkConfig) {
 				if err := s.ConnectToServer(l); err != nil {
-					s.logger.Error("Failed to auto-connect to %s: %v", l.Name, err)
+					s.logger.Error("Failed to auto-connect", "name", l.Name, "error", err)
 				}
 			}(link)
 		}

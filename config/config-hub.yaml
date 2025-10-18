@@ -1,0 +1,54 @@
+# IRC Server Configuration - Server A (Hub)
+
+server:
+  name: "hub.test"
+  host: "0.0.0.0"
+  port: 6667
+  tls:
+    enabled: false
+    port: 7000
+    cert_file: "certs/server.crt"
+    key_file: "certs/server.key"
+  
+  max_clients: 1000
+  timeout_seconds: 300
+  ping_interval_seconds: 60
+
+# WebSocket support
+websocket:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+  allowed_origins:
+    - "*"
+  tls:
+    enabled: false
+
+# Server operators
+operators:
+  - name: "admin"
+    password: "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"  # "admin123"
+
+# Logging
+logging:
+  level: "info"
+  file: "logs/hub.log"
+  console: true
+
+# Channel settings
+channels:
+  max_per_user: 10
+  persist_topics: false
+
+# Server Linking - Hub Server
+linking:
+  enabled: true
+  host: "0.0.0.0"
+  port: 7777
+  server_id: "0AA"
+  description: "Test IRC Hub Server"
+  password: "linkpass123"
+  
+  links:
+    # Expecting leaf server to connect
+    # No auto-connect needed for hub

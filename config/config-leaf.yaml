@@ -1,0 +1,60 @@
+# IRC Server Configuration - Server B (Leaf)
+
+server:
+  name: "leaf.test"
+  host: "0.0.0.0"
+  port: 6668
+  tls:
+    enabled: false
+    port: 7001
+    cert_file: "certs/server.crt"
+    key_file: "certs/server.key"
+  
+  max_clients: 1000
+  timeout_seconds: 300
+  ping_interval_seconds: 60
+
+# WebSocket support
+websocket:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8081
+  allowed_origins:
+    - "*"
+  tls:
+    enabled: false
+
+# Server operators
+operators:
+  - name: "admin"
+    password: "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"  # "admin123"
+
+# Logging
+logging:
+  level: "info"
+  file: "logs/leaf.log"
+  console: true
+
+# Channel settings
+channels:
+  max_per_user: 10
+  persist_topics: false
+
+# Server Linking - Leaf Server
+linking:
+  enabled: true
+  host: "0.0.0.0"
+  port: 7778
+  server_id: "1BB"
+  description: "Test IRC Leaf Server"
+  password: "linkpass123"
+  
+  links:
+    # Connect to hub
+    - name: "hub.test"
+      sid: "0AA"
+      host: "127.0.0.1"
+      port: 7777
+      password: "linkpass123"
+      auto_connect: true
+      is_hub: true
