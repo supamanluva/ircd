@@ -104,6 +104,13 @@ func (s *Server) AddClient(c *client.Client) error {
 		return fmt.Errorf("nickname already in use")
 	}
 	
+	// Assign UID if client is registered and doesn't have one yet (Phase 7.3)
+	if c.IsRegistered() && c.GetUID() == "" {
+		uid := s.network.GenerateUID()
+		c.SetUID(uid)
+		s.logger.Info("Assigned UID to client", "nick", nick, "uid", uid)
+	}
+	
 	s.clients[nick] = c
 	return nil
 }
@@ -162,6 +169,75 @@ func (s *Server) RemoveChannel(name string) {
 			s.logger.Info("Channel removed", "channel", name)
 		}
 	}
+}
+
+// GetBurstClients returns all local clients for burst synchronization
+func (s *Server) GetBurstClients() []linking.BurstClient {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	clients := make([]linking.BurstClient, 0, len(s.clients))
+	
+	for _, c := range s.clients {
+		if !c.IsRegistered() {
+			continue
+		}
+		
+		// Get UID, use nickname as fallback if UID not assigned
+		uid := c.GetUID()
+		if uid == "" {
+			uid = c.GetNickname()
+		}
+		
+		clients = append(clients, linking.BurstClient{
+			Nick:      c.GetNickname(),
+			User:      c.GetUsername(),
+			Host:      c.GetHostname(),
+			IP:        c.GetIP(),
+			Modes:     c.GetModes(),
+			RealName:  c.GetRealname(),
+			Timestamp: c.GetConnectTime().Unix(),
+		})
+	}
+	
+	return clients
+}
+
+// GetBurstChannels returns all channels for burst synchronization
+func (s *Server) GetBurstChannels() []linking.BurstChannel {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	channels := make([]linking.BurstChannel, 0, len(s.channels))
+	
+	for name, ch := range s.channels {
+		members := make(map[string]string)
+		
+		// In real implementation, we'd need to convert local clients to UIDs
+		// For now, this is a placeholder
+		for _, member := range ch.GetMembers() {
+			// TODO: Get UID for this client from network
+			// For now, just use nickname as placeholder
+			modes := ""
+			if ch.IsOperator(member) {
+				modes = "@"
+			} else if ch.IsVoiced(member) {
+				modes = "+"
+			}
+			members[member.GetNickname()] = modes
+		}
+		
+		// TODO: Get actual channel creation time
+		// For now, use Unix epoch as placeholder
+		channels = append(channels, linking.BurstChannel{
+			Name:    name,
+			TS:      time.Now().Unix(),
+			Modes:   ch.GetModes(),
+			Members: members,
+		})
+	}
+	
+	return channels
 }
 
 // New creates a new IRC server

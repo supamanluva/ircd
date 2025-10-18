@@ -26,6 +26,7 @@ type Client struct {
 	username       string
 	realname       string
 	hostname       string
+	uid            string          // Unique ID for server linking (TS6 format: SIDAAAAAA)
 	registered     bool
 	channels       map[string]bool // channel names the client has joined
 	modes          map[rune]bool   // user modes (o=operator, i=invisible, etc.)
@@ -33,6 +34,7 @@ type Client struct {
 	connType       ConnectionType
 	lastActivity   time.Time
 	lastPing       time.Time
+	connectTime    time.Time       // When client connected
 	mu             sync.RWMutex
 	logger         *logger.Logger
 	sendQueue      chan string
@@ -50,6 +52,7 @@ func New(conn net.Conn, log *logger.Logger) *Client {
 		connType:     TCP,
 		lastActivity: time.Now(),
 		lastPing:     time.Now(),
+		connectTime:  time.Now(),
 		logger:       log,
 		sendQueue:    make(chan string, 100),
 		disconnected: false,
@@ -308,5 +311,60 @@ func (c *Client) IsAway() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.awayMessage != ""
+}
+
+// SetUID sets the client's unique ID (for server linking)
+func (c *Client) SetUID(uid string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.uid = uid
+}
+
+// GetUID returns the client's unique ID
+func (c *Client) GetUID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.uid
+}
+
+// GetUsername returns the client's username
+func (c *Client) GetUsername() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.username
+}
+
+// GetRealname returns the client's real name
+func (c *Client) GetRealname() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.realname
+}
+
+// GetHostname returns the client's hostname
+func (c *Client) GetHostname() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hostname
+}
+
+// GetIP returns the client's IP address
+func (c *Client) GetIP() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	// Extract IP from hostname (which is set to RemoteAddr)
+	if c.conn != nil {
+		if addr, ok := c.conn.RemoteAddr().(*net.TCPAddr); ok {
+			return addr.IP.String()
+		}
+	}
+	return c.hostname
+}
+
+// GetConnectTime returns when the client connected
+func (c *Client) GetConnectTime() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.connectTime
 }
 

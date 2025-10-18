@@ -83,13 +83,63 @@ func (s *Server) handleLinkConnection(conn net.Conn) {
 	
 	s.logger.Info("Server registered in network", "name", server.Name, "total_servers", s.network.GetServerCount())
 	
-	// TODO: Burst mode (Phase 7.3)
-	// 1. Receive burst from remote (UID, SJOIN commands)
-	// 2. Send our burst
+	// Perform burst (Phase 7.3)
+	s.logger.Info("Receiving burst from", "name", server.Name)
 	
-	// TODO: Begin normal operation (Phase 7.4)
-	// Handle ongoing protocol messages
+	burstState, err := link.ReceiveBurst(s.network)
+	if err != nil {
+		s.logger.Error("Failed to receive burst", "name", server.Name, "error", err)
+		return
+	}
 	
+	s.logger.Info("Burst received", "name", server.Name, "users", burstState.UsersRecv, "channels", burstState.ChansRecv)
+	
+	// Send our burst
+	s.logger.Info("Sending burst to", "name", server.Name)
+	
+	err = link.SendBurstFromClients(
+		s.network,
+		func() []linking.BurstClient { return s.GetBurstClients() },
+		func() []linking.BurstChannel { return s.GetBurstChannels() },
+	)
+	if err != nil {
+		s.logger.Error("Failed to send burst", "name", server.Name, "error", err)
+		return
+	}
+	
+	localUsers := len(s.GetBurstClients())
+	localChans := len(s.GetBurstChannels())
+	s.logger.Info("Burst sent", "name", server.Name, "users", localUsers, "channels", localChans)
+	
+	// Log network statistics
+	s.logger.Info("Network state", "total_servers", s.network.GetServerCount(), 
+		"total_users", s.network.GetUserCount(), "total_channels", s.network.GetChannelCount())
+	
+	// TODO (Phase 7.4): Handle ongoing protocol messages
+	// For now, just keep the connection alive and log incoming messages
+	s.logger.Info("Link established, keeping connection alive", "name", server.Name)
+	
+	// Keep reading messages to prevent connection close
+	// In Phase 7.4 we'll process these messages for routing
+	for {
+		msg, err := link.ReadMessage()
+		if err != nil {
+			s.logger.Info("Link connection closed", "name", server.Name, "error", err)
+			break
+		}
+		
+		// Log incoming messages for now
+		s.logger.Debug("Received from linked server", "name", server.Name, "command", msg.Command, "params", msg.Params)
+		
+		// Handle PING to keep connection alive
+		if msg.Command == "PING" {
+			pong := linking.BuildPONG(s.network.LocalSID, msg.Source)
+			if err := link.WriteMessage(pong); err != nil {
+				s.logger.Error("Failed to send PONG", "name", server.Name, "error", err)
+				break
+			}
+		}
+	}
 	s.logger.Info("Link connection closed for", "address", conn.RemoteAddr().String())
 }
 
@@ -139,12 +189,66 @@ func (s *Server) ConnectToServer(linkCfg LinkConfig) error {
 	
 	s.logger.Info("Server registered in network", "name", server.Name, "total_servers", s.network.GetServerCount())
 	
-	// TODO: Burst mode (Phase 7.3)
-	// 1. Send our burst (UID, SJOIN commands)
-	// 2. Receive their burst
+	// Perform burst (Phase 7.3)
+	s.logger.Info("Sending burst to", "name", server.Name)
 	
-	// TODO: Begin normal operation (Phase 7.4)
-	// Handle ongoing protocol messages in a goroutine
+	err = link.SendBurstFromClients(
+		s.network,
+		func() []linking.BurstClient { return s.GetBurstClients() },
+		func() []linking.BurstChannel { return s.GetBurstChannels() },
+	)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("failed to send burst: %v", err)
+	}
+	
+	localUsers := len(s.GetBurstClients())
+	localChans := len(s.GetBurstChannels())
+	s.logger.Info("Burst sent", "name", server.Name, "users", localUsers, "channels", localChans)
+	
+	// Receive their burst
+	s.logger.Info("Receiving burst from", "name", server.Name)
+	
+	burstState, err := link.ReceiveBurst(s.network)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("failed to receive burst: %v", err)
+	}
+	
+	s.logger.Info("Burst received", "name", server.Name, "users", burstState.UsersRecv, "channels", burstState.ChansRecv)
+	
+	// Log network statistics
+	s.logger.Info("Network state", "total_servers", s.network.GetServerCount(), 
+		"total_users", s.network.GetUserCount(), "total_channels", s.network.GetChannelCount())
+	
+	// TODO (Phase 7.4): Handle ongoing protocol messages in a goroutine
+	// For now, just keep the connection alive and log incoming messages
+	s.logger.Info("Link established, starting message handler", "name", server.Name)
+	
+	// Keep reading messages in a goroutine to prevent blocking
+	go func() {
+		defer conn.Close()
+		
+		for {
+			msg, err := link.ReadMessage()
+			if err != nil {
+				s.logger.Info("Link connection closed", "name", server.Name, "error", err)
+				return
+			}
+			
+			// Log incoming messages for now
+			s.logger.Debug("Received from linked server", "name", server.Name, "command", msg.Command, "params", msg.Params)
+			
+			// Handle PING to keep connection alive
+			if msg.Command == "PING" {
+				pong := linking.BuildPONG(s.network.LocalSID, msg.Source)
+				if err := link.WriteMessage(pong); err != nil {
+					s.logger.Error("Failed to send PONG", "name", server.Name, "error", err)
+					return
+				}
+			}
+		}
+	}()
 	
 	return nil
 }
