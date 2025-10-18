@@ -78,6 +78,8 @@ type Server struct {
 	clientsAddr    map[string]*client.Client  // address -> client
 	channels       map[string]*channel.Channel
 	network        *linking.Network           // Network state (linked servers, remote users)
+	linkRegistry   *linking.LinkRegistry      // Active server-to-server connections (Phase 7.4)
+	router         *linking.MessageRouter     // Message router for cross-server communication (Phase 7.4)
 	mu             sync.RWMutex
 	shutdown       chan struct{}
 	handler        *commands.Handler
@@ -258,10 +260,12 @@ func New(cfg *Config, log *logger.Logger) (*Server, error) {
 		shutdown:    make(chan struct{}),
 	}
 	
-	// Initialize network state if linking is enabled
+	// Initialize network state if linking is enabled (Phase 7.1+)
 	if cfg.LinkingEnabled && cfg.ServerID != "" {
 		srv.network = linking.NewNetwork(cfg.ServerID, cfg.ServerName)
-		log.Info("Server linking enabled with SID: %s", cfg.ServerID)
+		srv.linkRegistry = linking.NewLinkRegistry()
+		srv.router = linking.NewMessageRouter(srv.network, srv.linkRegistry)
+		log.Info("Server linking enabled", "sid", cfg.ServerID)
 	}
 	
 	// Convert config operators to commands.Operator

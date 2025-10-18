@@ -115,12 +115,16 @@ func (s *Server) handleLinkConnection(conn net.Conn) {
 	s.logger.Info("Network state", "total_servers", s.network.GetServerCount(), 
 		"total_users", s.network.GetUserCount(), "total_channels", s.network.GetChannelCount())
 	
-	// TODO (Phase 7.4): Handle ongoing protocol messages
-	// For now, just keep the connection alive and log incoming messages
+	// Register link in link registry (Phase 7.4)
+	if err := s.linkRegistry.AddLink(server.SID, link); err != nil {
+		s.logger.Error("Failed to register link", "name", server.Name, "error", err)
+		return
+	}
+	defer s.linkRegistry.RemoveLink(server.SID)
+	
 	s.logger.Info("Link established, keeping connection alive", "name", server.Name)
 	
-	// Keep reading messages to prevent connection close
-	// In Phase 7.4 we'll process these messages for routing
+	// Handle ongoing protocol messages (Phase 7.4)
 	for {
 		msg, err := link.ReadMessage()
 		if err != nil {
@@ -139,6 +143,8 @@ func (s *Server) handleLinkConnection(conn net.Conn) {
 				break
 			}
 		}
+		
+		// TODO (Phase 7.4): Route other messages (PRIVMSG, JOIN, PART, etc.)
 	}
 	s.logger.Info("Link connection closed for", "address", conn.RemoteAddr().String())
 }
@@ -221,13 +227,20 @@ func (s *Server) ConnectToServer(linkCfg LinkConfig) error {
 	s.logger.Info("Network state", "total_servers", s.network.GetServerCount(), 
 		"total_users", s.network.GetUserCount(), "total_channels", s.network.GetChannelCount())
 	
-	// TODO (Phase 7.4): Handle ongoing protocol messages in a goroutine
-	// For now, just keep the connection alive and log incoming messages
+	// Register link in link registry (Phase 7.4)
+	if err := s.linkRegistry.AddLink(server.SID, link); err != nil {
+		conn.Close()
+		return fmt.Errorf("failed to register link: %v", err)
+	}
+	
 	s.logger.Info("Link established, starting message handler", "name", server.Name)
 	
-	// Keep reading messages in a goroutine to prevent blocking
+	// Handle ongoing protocol messages in a goroutine (Phase 7.4)
 	go func() {
-		defer conn.Close()
+		defer func() {
+			s.linkRegistry.RemoveLink(server.SID)
+			conn.Close()
+		}()
 		
 		for {
 			msg, err := link.ReadMessage()
@@ -247,6 +260,8 @@ func (s *Server) ConnectToServer(linkCfg LinkConfig) error {
 					return
 				}
 			}
+			
+			// TODO (Phase 7.4): Route other messages (PRIVMSG, JOIN, PART, etc.)
 		}
 	}()
 	
