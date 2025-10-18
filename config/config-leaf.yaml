@@ -70,10 +70,10 @@ linking:
   
   links:
     # Configure the HUB server connection here
-    - name: "hub.test"                   # Hub's server.name (from hub admin)
-      sid: "0AA"                          # Hub's server_id (from hub admin)
-      host: "127.0.0.1"                   # Hub's IP or domain (CHANGE for remote hub!)
-      port: 7777                          # Hub's linking.port (from hub admin)
-      password: "linkpass123"             # Hub's linking.password (must match!)
+    - name: "irc.vnsnet.se"              # Hub's server.name (MUST MATCH EXACTLY!)
+      sid: "0AA"                          # Hub's server_id (matches your hub!)
+      host: "95.141.241.66"               # Hub's public IP
+      port: 7777                          # Hub's linking port
+      password: "linkpass123"             # Hub's linking password (matches!)
       auto_connect: true                  # Automatically connect on startup
       is_hub: true                        # This is a hub server (keep as true)

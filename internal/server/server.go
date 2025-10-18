@@ -208,6 +208,7 @@ func (s *Server) GetBurstClients() []linking.BurstClient {
 		}
 		
 		clients = append(clients, linking.BurstClient{
+			UID:       uid,
 			Nick:      c.GetNickname(),
 			User:      c.GetUsername(),
 			Host:      c.GetHostname(),

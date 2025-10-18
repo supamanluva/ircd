@@ -191,7 +191,12 @@ func (l *Link) SendBurstFromClients(network *Network, getClients func() []BurstC
 	// Send all local users
 	clients := getClients()
 	for _, client := range clients {
-		uid := network.GenerateUID()
+		// Use the client's actual UID (already assigned during registration)
+		uid := client.UID
+		if uid == "" {
+			// Fallback: generate UID if not assigned (shouldn't happen)
+			uid = network.GenerateUID()
+		}
 		
 		msg := BuildUID(
 			network.LocalSID,
@@ -237,6 +242,7 @@ func (l *Link) SendBurstFromClients(network *Network, getClients func() []BurstC
 
 // BurstClient represents a client for burst synchronization
 type BurstClient struct {
+	UID       string
 	Nick      string
 	User      string
 	Host      string
