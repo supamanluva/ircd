@@ -280,6 +280,11 @@ func New(cfg *Config, log *logger.Logger) (*Server, error) {
 	// Initialize command handler with server as registry
 	srv.handler = commands.New(cfg.ServerName, log, srv, srv, cmdOperators)
 	
+	// Set router for the command handler if linking is enabled (Phase 7.4)
+	if cfg.LinkingEnabled && srv.router != nil {
+		srv.handler.SetRouter(srv)
+	}
+	
 	return srv, nil
 }
 
@@ -599,4 +604,90 @@ func (s *Server) Shutdown() {
 
 	close(s.shutdown)
 	s.logger.Info("Server shutdown complete")
+}
+
+// MessageRouter implementation for Phase 7.4 - cross-server message routing
+
+// RoutePrivmsg routes a PRIVMSG to a remote user
+func (s *Server) RoutePrivmsg(sourceNick, sourceUser, sourceHost, targetNick, message string) error {
+	if s.router == nil {
+		return fmt.Errorf("routing not available")
+	}
+	
+	// Find the remote user by nickname
+	remoteUser, ok := s.network.GetUserByNick(targetNick)
+	if !ok {
+		return fmt.Errorf("user %s not found in network", targetNick)
+	}
+	
+	// Build PRIVMSG message
+	// Format: :<source> PRIVMSG <target> :<message>
+	msg := &linking.Message{
+		Source:  s.network.LocalSID,
+		Command: "PRIVMSG",
+		Params:  []string{remoteUser.UID, message},
+	}
+	
+	return s.router.RouteToUser(s.network.LocalSID, remoteUser.UID, msg)
+}
+
+// RouteNotice routes a NOTICE to a remote user
+func (s *Server) RouteNotice(sourceNick, sourceUser, sourceHost, targetNick, message string) error {
+	if s.router == nil {
+		return fmt.Errorf("routing not available")
+	}
+	
+	// Find the remote user by nickname
+	remoteUser, ok := s.network.GetUserByNick(targetNick)
+	if !ok {
+		return fmt.Errorf("user %s not found in network", targetNick)
+	}
+	
+	// Build NOTICE message
+	msg := &linking.Message{
+		Source:  s.network.LocalSID,
+		Command: "NOTICE",
+		Params:  []string{remoteUser.UID, message},
+	}
+	
+	return s.router.RouteToUser(s.network.LocalSID, remoteUser.UID, msg)
+}
+
+// RouteChannelMessage routes a message to all servers with channel members
+func (s *Server) RouteChannelMessage(sourceNick, sourceUser, sourceHost, channel, message, msgType string) error {
+	if s.router == nil {
+		return nil // Silently ignore if routing not available
+	}
+	
+	// Get source client UID
+	var sourceUID string
+	s.mu.RLock()
+	if client, ok := s.clients[sourceNick]; ok {
+		sourceUID = client.GetUID()
+	}
+	s.mu.RUnlock()
+	
+	if sourceUID == "" {
+		// If no UID, use SID as source
+		sourceUID = s.network.LocalSID
+	}
+	
+	// Build message
+	// Format: :<sourceUID> PRIVMSG <channel> :<message>
+	msg := &linking.Message{
+		Source:  sourceUID,
+		Command: msgType,
+		Params:  []string{channel, message},
+	}
+	
+	// Route to all servers with channel members (except us)
+	return s.router.RouteToChannelServers(channel, msg, s.network.LocalSID)
+}
+
+// IsUserLocal checks if a user is on the local server
+func (s *Server) IsUserLocal(nickname string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, exists := s.clients[nickname]
+	return exists
 }

@@ -142,9 +142,13 @@ func (s *Server) handleLinkConnection(conn net.Conn) {
 				s.logger.Error("Failed to send PONG", "name", server.Name, "error", err)
 				break
 			}
+			continue
 		}
 		
-		// TODO (Phase 7.4): Route other messages (PRIVMSG, JOIN, PART, etc.)
+		// Handle incoming messages (Phase 7.4.2)
+		if err := s.handleLinkMessage(msg, server); err != nil {
+			s.logger.Error("Failed to handle link message", "command", msg.Command, "error", err)
+		}
 	}
 	s.logger.Info("Link connection closed for", "address", conn.RemoteAddr().String())
 }
@@ -259,9 +263,13 @@ func (s *Server) ConnectToServer(linkCfg LinkConfig) error {
 					s.logger.Error("Failed to send PONG", "name", server.Name, "error", err)
 					return
 				}
+				continue
 			}
 			
-			// TODO (Phase 7.4): Route other messages (PRIVMSG, JOIN, PART, etc.)
+			// Handle incoming messages (Phase 7.4.2)
+			if err := s.handleLinkMessage(msg, server); err != nil {
+				s.logger.Error("Failed to handle link message", "command", msg.Command, "error", err)
+			}
 		}
 	}()
 	
@@ -284,4 +292,100 @@ func (s *Server) AutoConnect() {
 			}(link)
 		}
 	}
+}
+
+// handleLinkMessage processes incoming messages from linked servers (Phase 7.4)
+func (s *Server) handleLinkMessage(msg *linking.Message, fromServer *linking.Server) error {
+	switch msg.Command {
+	case "PRIVMSG", "NOTICE":
+		return s.handleLinkPrivmsg(msg, fromServer)
+	
+	// TODO (Phase 7.4.3): Handle JOIN, PART, QUIT, NICK
+	// TODO (Phase 7.4.4): Handle MODE, TOPIC, KICK, INVITE
+	
+	default:
+		s.logger.Debug("Unhandled link message", "command", msg.Command, "from", fromServer.Name)
+	}
+	
+	return nil
+}
+
+// handleLinkPrivmsg handles PRIVMSG/NOTICE from remote servers
+func (s *Server) handleLinkPrivmsg(msg *linking.Message, fromServer *linking.Server) error {
+	if len(msg.Params) < 2 {
+		return fmt.Errorf("invalid %s: need 2 params", msg.Command)
+	}
+	
+	target := msg.Params[0]
+	message := msg.Params[1]
+	
+	// Get source user info
+	sourceUID := msg.Source
+	sourceUser, ok := s.network.GetUserByUID(sourceUID)
+	if !ok {
+		// Source might be a server SID, try to construct something reasonable
+		s.logger.Debug("Unknown source user", "uid", sourceUID)
+		sourceUser = &linking.RemoteUser{
+			UID:  sourceUID,
+			Nick: sourceUID,
+		}
+	}
+	
+	// Check if target is a channel
+	if len(target) > 0 && (target[0] == '#' || target[0] == '&') {
+		// Channel message - deliver to local members
+		s.mu.RLock()
+		ch := s.channels[target]
+		s.mu.RUnlock()
+		
+		if ch == nil {
+			// We don't have this channel locally, ignore
+			return nil
+		}
+		
+		// Format message and broadcast to local channel members
+		msgText := fmt.Sprintf(":%s!%s@%s %s %s :%s",
+			sourceUser.Nick, sourceUser.User, sourceUser.Host,
+			msg.Command, target, message)
+		
+		// Broadcast to all local members
+		ch.Broadcast(msgText, nil)
+		
+		s.logger.Debug("Delivered channel message from remote",
+			"from", sourceUser.Nick, "channel", target)
+		
+		return nil
+	}
+	
+	// Private message - find target client locally
+	s.mu.RLock()
+	targetClient := s.clients[target]
+	s.mu.RUnlock()
+	
+	if targetClient == nil {
+		// Try finding by UID
+		for _, c := range s.clients {
+			if c.GetUID() == target {
+				targetClient = c
+				break
+			}
+		}
+	}
+	
+	if targetClient == nil {
+		// Target not found locally
+		return fmt.Errorf("target %s not found locally", target)
+	}
+	
+	// Format and deliver message
+	msgText := fmt.Sprintf(":%s!%s@%s %s %s :%s",
+		sourceUser.Nick, sourceUser.User, sourceUser.Host,
+		msg.Command, targetClient.GetNickname(), message)
+	
+	targetClient.Send(msgText)
+	
+	s.logger.Debug("Delivered private message from remote",
+		"from", sourceUser.Nick, "to", targetClient.GetNickname())
+	
+	return nil
 }

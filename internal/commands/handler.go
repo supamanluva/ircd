@@ -20,6 +20,7 @@ type Handler struct {
 	clients    ClientRegistry
 	channels   ChannelRegistry
 	operators  map[string]string // name -> bcrypt password hash
+	router     MessageRouter     // Message router for server linking (Phase 7.4)
 }
 
 // ClientRegistry interface for managing clients
@@ -35,6 +36,18 @@ type ChannelRegistry interface {
 	GetChannel(name string) *channel.Channel
 	CreateChannel(name string) *channel.Channel
 	RemoveChannel(name string)
+}
+
+// MessageRouter interface for routing messages to remote servers (Phase 7.4)
+type MessageRouter interface {
+	// RoutePrivmsg routes a PRIVMSG to a remote user
+	RoutePrivmsg(sourceNick, sourceUser, sourceHost, targetNick, message string) error
+	// RouteNotice routes a NOTICE to a remote user
+	RouteNotice(sourceNick, sourceUser, sourceHost, targetNick, message string) error
+	// RouteChannelMessage routes a message to all servers with channel members
+	RouteChannelMessage(sourceNick, sourceUser, sourceHost, channel, message, msgType string) error
+	// IsUserLocal checks if a user is on the local server
+	IsUserLocal(nickname string) bool
 }
 
 // CommandFunc is the signature for command handler functions
@@ -60,7 +73,13 @@ func New(serverName string, log *logger.Logger, clients ClientRegistry, channels
 		clients:    clients,
 		channels:   channels,
 		operators:  operMap,
+		router:     nil, // Will be set by SetRouter if linking is enabled
 	}
+}
+
+// SetRouter sets the message router for server linking (Phase 7.4)
+func (h *Handler) SetRouter(router MessageRouter) {
+	h.router = router
 }
 
 // Handle processes a parsed IRC message
@@ -455,11 +474,61 @@ func (h *Handler) handleMessage(c *client.Client, msg *parser.Message, cmdType s
 		msgText := fmt.Sprintf(":%s %s %s :%s", c.GetHostmask(), cmdType, target, message)
 		ch.Broadcast(msgText, c)
 
+		// Route to remote servers with channel members (Phase 7.4)
+		if h.router != nil {
+			nick := c.GetNickname()
+			parts := strings.SplitN(c.GetHostmask(), "!", 2)
+			user := ""
+			host := ""
+			if len(parts) == 2 {
+				userhost := strings.SplitN(parts[1], "@", 2)
+				if len(userhost) == 2 {
+					user = userhost[0]
+					host = userhost[1]
+				}
+			}
+			
+			if err := h.router.RouteChannelMessage(nick, user, host, target, message, cmdType); err != nil {
+				h.logger.Debug("Failed to route channel message", "error", err, "channel", target)
+			}
+		}
+
 		h.logger.Debug("Channel message", "from", c.GetNickname(), "channel", target)
 	} else {
 		// Private message to user
 		targetClient := h.clients.GetClient(target)
 		if targetClient == nil {
+			// Check if user exists on remote server (Phase 7.4)
+			if h.router != nil && !h.router.IsUserLocal(target) {
+				// User might be on a remote server, try routing
+				nick := c.GetNickname()
+				parts := strings.SplitN(c.GetHostmask(), "!", 2)
+				user := ""
+				host := ""
+				if len(parts) == 2 {
+					userhost := strings.SplitN(parts[1], "@", 2)
+					if len(userhost) == 2 {
+						user = userhost[0]
+						host = userhost[1]
+					}
+				}
+				
+				var err error
+				if cmdType == "PRIVMSG" {
+					err = h.router.RoutePrivmsg(nick, user, host, target, message)
+				} else {
+					err = h.router.RouteNotice(nick, user, host, target, message)
+				}
+				
+				if err != nil {
+					// User not found on remote servers either
+					h.sendNumeric(c, ERR_NOSUCHNICK, target+" :No such nick/channel")
+				} else {
+					h.logger.Debug("Routed to remote server", "from", nick, "to", target, "type", cmdType)
+				}
+				return nil
+			}
+			
 			h.sendNumeric(c, ERR_NOSUCHNICK, target+" :No such nick/channel")
 			return nil
 		}
